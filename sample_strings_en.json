@@ -1,0 +1,6 @@
+{
+  "MENU_PLAY": "Play Game",
+  "MENU_SETTINGS": "Settings",
+  "HUD_SCORE": "Score: %d pts [BTN_X]",
+  "DIALOG_WELCOME": "Welcome back, <color=#FFD700>{player}</color>! Ready for level {level}?"
+}

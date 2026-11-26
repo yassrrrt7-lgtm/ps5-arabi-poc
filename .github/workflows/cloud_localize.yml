@@ -1,0 +1,36 @@
+name: Cloud Localization Worker POC (0 SAR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "split (for free chat translation) or gemini (Gemini Flash-Lite Free Tier)"
+        required: true
+        default: "split"
+      input_file:
+        description: "Path to strings_en.json in repo"
+        required: true
+        default: "sample_strings_en.json"
+
+jobs:
+  localize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Free Python Toolkit
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install arabic-reshaper python-bidi fonttools Pillow freetype-py
+      - name: Run Translation Worker
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 cloud_worker/translate_free.py \
+            --mode "${{ github.event.inputs.mode }}" \
+            --input "${{ github.event.inputs.input_file }}" \
+            --output "out_localized"
+      - name: Upload Localized Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: arabi-localized-output
+          path: out_localized

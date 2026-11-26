@@ -1,0 +1,43 @@
+name: Build PS5 5.50 Arabi POC (Free)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Python Audit Unit Tests
+        run: python3 tests/test_shaper_audit.py
+
+      - name: Download ps5-payload-sdk (john-tornblom)
+        run: |
+          mkdir -p /tmp/ps5sdk
+          SDK_URL=$(curl -s https://api.github.com/repos/ps5-payload-dev/sdk/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.tar.gz') or a['name'].endswith('.zip')))")
+          echo "Downloading SDK: $SDK_URL"
+          curl -L "$SDK_URL" -o /tmp/sdk_archive
+          if [[ "$SDK_URL" == *.tar.gz ]]; then
+            tar -xzf /tmp/sdk_archive -C /tmp/ps5sdk
+          else
+            unzip -q /tmp/sdk_archive -d /tmp/ps5sdk
+          fi
+          SDK_DIR=$(find /tmp/ps5sdk -maxdepth 2 -name "bin" -type d | head -n 1 | xargs dirname)
+          echo "PS5_PAYLOAD_SDK=$SDK_DIR" >> $GITHUB_ENV
+
+      - name: Build PS5 POC ELFs
+        run: |
+          make -C ps5_poc PS5_PAYLOAD_SDK="$PS5_PAYLOAD_SDK"
+          ls -lh ps5_poc/*.elf
+
+      - name: Upload Compiled PS5 POC Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-arabi-poc-550-elfs
+          path: |
+            ps5_poc/arabi_scanner_poc.elf
+            ps5_poc/arabi_afr_poc.elf
