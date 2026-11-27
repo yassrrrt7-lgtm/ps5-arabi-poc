@@ -1,0 +1,37 @@
+name: PS5 Arabi Hub Auto-Pipeline (Telegram + Auto-QA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "analyze_and_send or qa_and_build"
+        required: true
+        type: choice
+        options:
+          - analyze_and_send
+          - qa_and_build
+      title_id:
+        description: "PS5/PS4 Title ID (e.g. PPSA03524)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  run-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python Libraries
+        run: pip install requests arabic-reshaper python-bidi
+
+      - name: Run PS5 Arabi Hub Engine
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python3 -u arabi_hub_engine/hub_pipeline.py \
+            --action "${{ github.event.inputs.action }}" \
+            --title-id "${{ github.event.inputs.title_id }}"

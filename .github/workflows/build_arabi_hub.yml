@@ -1,0 +1,35 @@
+name: Build PS5 Arabi Hub (arabi_hub.elf)
+
+on:
+  push:
+    paths:
+      - "ps5_hub/**"
+      - ".github/workflows/build_arabi_hub.yml"
+  workflow_dispatch:
+
+jobs:
+  build-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ps5-payload-sdk (Authenticated)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/ps5sdk
+          SDK_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/ps5-payload-dev/sdk/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.tar.gz') or a['name'].endswith('.zip')))")
+          curl -L "$SDK_URL" -o /tmp/sdk_pkg
+          tar -xzf /tmp/sdk_pkg -C /tmp/ps5sdk --strip-components=1 || unzip -o /tmp/sdk_pkg -d /tmp/ps5sdk
+
+      - name: Compile arabi_hub.elf for PS5 5.50
+        run: |
+          make -C ps5_hub PS5_PAYLOAD_SDK=/tmp/ps5sdk
+          ls -lh ps5_hub/arabi_hub.elf
+
+      - name: Upload arabi_hub.elf Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-arabi-hub-elf
+          path: ps5_hub/arabi_hub.elf
