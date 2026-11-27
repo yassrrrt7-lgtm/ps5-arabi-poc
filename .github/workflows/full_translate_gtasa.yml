@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "full_free (اللعبة كاملة مجاناً بدون مفتاح) or menus_fast (القوائم فقط في 20 ثانية)"
+        description: "full_free (اللعبة كاملة مجاناً بدون مفتاح خلال 2-4 دقائق) or menus_fast (القوائم فقط في 20 ثانية)"
         required: true
         default: "full_free"
         type: choice
@@ -15,21 +15,23 @@ on:
 jobs:
   translate-and-pack:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Free Python Libraries (0 Keys)
         run: |
           python3 -m pip install --upgrade pip
-          pip install arabic-reshaper python-bidi deep-translator
+          pip install arabic-reshaper python-bidi requests
 
-      - name: Translate & Shape Connected Arabic
-        run: python3 gtasa_full/full_localize_gtasa.py --mode "${{ github.event.inputs.mode }}"
+      - name: Translate & Shape Connected Arabic (Fast 10-Thread)
+        run: python3 -u gtasa_full/full_localize_gtasa.py --mode "${{ github.event.inputs.mode }}"
 
       - name: Download Official repak CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPAK_URL=$(curl -s https://api.github.com/repos/trumank/repak/releases/latest \
+          REPAK_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/trumank/repak/releases/latest \
             | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if 'x86_64-unknown-linux-gnu' in a['name'] and a['name'].endswith('.tar.xz')))")
           curl -L "$REPAK_URL" -o /tmp/repak.tar.xz
           mkdir -p /tmp/repak_bin

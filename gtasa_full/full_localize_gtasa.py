@@ -1,20 +1,23 @@
 """
-GTA San Andreas Definitive Edition (PS5 PPSA03524) — ZERO-KEY Free Arabic Localization Builder
+GTA San Andreas Definitive Edition (PS5 PPSA03524) — FAST ZERO-KEY Free Arabic Localization Builder (v3)
 Modes:
-  --mode menus_fast : Translates all Menus/Settings/Pause/HUD using hand-crafted Arabic (20 seconds, 0 keys!)
-  --mode full_free  : Hand-crafted Arabic for Menus + FREE Google Translate (deep-translator, 0 API keys!) for ALL 16,941 strings!
+  --mode menus_fast : Hand-crafted Arabic for Menus/Settings/Pause/HUD (~20 seconds, 0 keys)
+  --mode full_free  : Hand-crafted Menus + 10-Thread Fast Free Google Translate for ALL 16,941 strings (~2-4 minutes, 0 keys!)
 """
 
 import argparse
+import concurrent.futures
 import json
 import re
 import shutil
 import struct
 import textwrap
+import threading
 import time
 from pathlib import Path
 
 import arabic_reshaper
+import requests
 from bidi.algorithm import get_display
 
 RESHAPER = arabic_reshaper.ArabicReshaper(configuration={
@@ -119,10 +122,12 @@ def write_locres_strings(orig_buf: bytes, new_items, str_arr_off: int, end_pos: 
 
 
 def protect_for_mt(s: str):
+    # Normalize real newlines to ~n~ so batch newline splitting is 100% clean
+    s_clean = s.replace("\r\n", "~n~").replace("\n", "~n~")
     toks = []
     def repl(m):
         idx = len(toks); toks.append(m.group(0)); return f"[[X{idx}]]"
-    return TOKEN_RE.sub(repl, s), toks
+    return TOKEN_RE.sub(repl, s_clean), toks
 
 
 def restore_after_mt(s: str, toks: list[str]) -> str:
@@ -131,18 +136,71 @@ def restore_after_mt(s: str, toks: list[str]) -> str:
     return s
 
 
-def translate_free_google(pending: list[str], cache: dict, cache_path: Path):
-    from deep_translator import GoogleTranslator
-    translator = GoogleTranslator(source="en", target="ar")
+_THREAD_LOCAL = threading.local()
 
-    # Pack into safe ~3,500-char batches separated by a unique newline marker
-    SEP = "\n###\n"
+
+def _get_session() -> requests.Session:
+    sess = getattr(_THREAD_LOCAL, "sess", None)
+    if sess is None:
+        sess = requests.Session()
+        sess.headers.update({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+        _THREAD_LOCAL.sess = sess
+    return sess
+
+
+def _gtx_translate(text: str) -> str:
+    sess = _get_session()
+    url = "https://translate.googleapis.com/translate_a/single"
+    for attempt in range(4):
+        try:
+            r = sess.post(
+                url,
+                params={"client": "gtx", "sl": "en", "tl": "ar", "dt": "t"},
+                data={"q": text},
+                timeout=12,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return "".join(seg[0] for seg in data[0] if seg and seg[0])
+            if r.status_code in (429, 503):
+                time.sleep(2.5 * (attempt + 1))
+                continue
+        except Exception:
+            time.sleep(1.5 * (attempt + 1))
+    return ""
+
+
+def _translate_chunk_recursive(chunk: list[tuple[str, str, list[str]]]) -> dict[str, str]:
+    if not chunk:
+        return {}
+    joined = "\n".join(prot for _, prot, _ in chunk)
+    out_text = _gtx_translate(joined)
+    if out_text:
+        lines = out_text.splitlines()
+        if len(lines) == len(chunk):
+            res = {}
+            for (orig_s, _, toks), ar_line in zip(chunk, lines):
+                res[orig_s] = restore_after_mt(ar_line.strip(), toks)
+            return res
+    if len(chunk) == 1:
+        orig_s, _, toks = chunk[0]
+        if out_text:
+            return {orig_s: restore_after_mt(out_text.strip(), toks)}
+        return {}
+    # Binary split on mismatch instead of slow 1-by-1
+    mid = len(chunk) // 2
+    res = _translate_chunk_recursive(chunk[:mid])
+    res.update(_translate_chunk_recursive(chunk[mid:]))
+    return res
+
+
+def translate_free_google_fast(pending: list[str], cache: dict, cache_path: Path):
     batches = []
     cur_batch, cur_len = [], 0
     for s in pending:
         prot, toks = protect_for_mt(s)
-        item_len = len(prot) + len(SEP)
-        if cur_batch and (cur_len + item_len > 3400 or len(cur_batch) >= 30):
+        item_len = len(prot) + 1
+        if cur_batch and (cur_len + item_len > 3600 or len(cur_batch) >= 35):
             batches.append(cur_batch)
             cur_batch, cur_len = [], 0
         cur_batch.append((s, prot, toks))
@@ -150,35 +208,31 @@ def translate_free_google(pending: list[str], cache: dict, cache_path: Path):
     if cur_batch:
         batches.append(cur_batch)
 
-    print(f"Translating {len(pending):,} strings in {len(batches)} free batches (0 API keys)...")
-    for bi, batch in enumerate(batches):
-        joined = SEP.join(prot for _, prot, _ in batch)
-        for attempt in range(4):
-            try:
-                out_text = translator.translate(joined)
-                parts = re.split(r"\s*###\s*", out_text.strip())
-                if len(parts) == len(batch):
-                    for (orig_s, _, toks), ar_part in zip(batch, parts):
-                        cache[orig_s] = restore_after_mt(ar_part.strip(), toks)
-                else:
-                    # Fallback to line-by-line for this batch if separator drifted
-                    for orig_s, prot, toks in batch:
-                        try:
-                            ar_one = translator.translate(prot)
-                            if ar_one:
-                                cache[orig_s] = restore_after_mt(ar_one.strip(), toks)
-                        except Exception:
-                            pass
-                if bi % 25 == 0 or bi == len(batches) - 1:
+    total_batches = len(batches)
+    print(f"FAST 10-thread translation: {len(pending):,} strings in {total_batches} batches (0 API keys)...", flush=True)
+    t0 = time.time()
+    done_batches = 0
+    lock = threading.Lock()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        futs = [ex.submit(_translate_chunk_recursive, b) for b in batches]
+        for fut in concurrent.futures.as_completed(futs):
+            part_res = fut.result()
+            with lock:
+                cache.update(part_res)
+                done_batches += 1
+                if done_batches % 25 == 0 or done_batches == total_batches:
+                    elapsed = time.time() - t0
+                    pct = (done_batches / total_batches) * 100
+                    print(
+                        f"[{pct:5.1f}% | Batch {done_batches}/{total_batches}] "
+                        f"Translated {len(cache):,} strings in {elapsed:.0f}s",
+                        flush=True,
+                    )
                     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-                    print(f"[Batch {bi + 1}/{len(batches)}] Saved {len(cache):,} translated strings.")
-                time.sleep(0.35)
-                break
-            except Exception as e:
-                wait = 5 * (attempt + 1)
-                print(f"[Batch {bi + 1}] Error: {e}, retrying in {wait}s...")
-                time.sleep(wait)
+
     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"DONE translating! Total Arabic strings in cache: {len(cache):,} ({time.time() - t0:.1f}s)", flush=True)
 
 
 def main():
@@ -194,7 +248,6 @@ def main():
         shutil.rmtree(out_pak_root)
 
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
-    # Load any manual part_*_ar.json files if user uploaded them
     for pf in sorted(root.glob("part_*_ar.json")):
         try:
             mp = json.loads((root / "master_en_map.json").read_text(encoding="utf-8")) if (root / "master_en_map.json").exists() else {}
@@ -203,9 +256,8 @@ def main():
                 if k in mp and isinstance(v, str) and v.strip():
                     cache[mp[k]] = v.strip()
         except Exception as e:
-            print(f"Skipping {pf.name}: {e}")
+            print(f"Skipping {pf.name}: {e}", flush=True)
 
-    # Always apply hand-crafted crisp Arabic menu glossary on top!
     glossary = json.loads((root / "hand_glossary.json").read_text(encoding="utf-8"))
     cache.update(glossary)
 
@@ -221,9 +273,9 @@ def main():
                 unique_pending.append(s)
 
     if args.mode == "full_free" and unique_pending:
-        translate_free_google(unique_pending, cache, cache_path)
+        translate_free_google_fast(unique_pending, cache, cache_path)
     else:
-        print(f"Mode={args.mode}: applying {len(cache):,} curated Arabic strings.")
+        print(f"Mode={args.mode}: applying {len(cache):,} curated Arabic strings.", flush=True)
 
     loc_targets = {
         "Common.locres": "Gameface/Content/Localization/Common/en/Common.locres",
@@ -246,7 +298,7 @@ def main():
         dst = out_pak_root / rel_out
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(patched)
-        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped strings (verified).")
+        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped strings (verified).", flush=True)
 
     font_bytes = (root / "font" / "ArabicGameFont.ttf").read_bytes()
     for slot in [
@@ -263,7 +315,7 @@ def main():
         dst = out_pak_root / slot
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(font_bytes)
-    print("All 9 Arabic+Latin font slots ready.")
+    print("All 9 Arabic+Latin font slots ready.", flush=True)
 
 
 if __name__ == "__main__":
