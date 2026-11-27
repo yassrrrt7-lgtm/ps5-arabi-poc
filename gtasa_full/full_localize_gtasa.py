@@ -1,14 +1,14 @@
 """
-GTA San Andreas Definitive Edition (PS5 PPSA03524) — OFFLINE ZERO-KEY Arabic Localization Builder (v5)
+GTA San Andreas Definitive Edition (PS5 PPSA03524) — OFFLINE ZERO-KEY Arabic Localization Builder (v6 POLISH)
 Fixes from real PS5 5.50 TV verification:
-  1. Wraps shaped visual Arabic lines in U+202D (LRO) ... U+202C (PDF) so UE4 ICU BiDi
-     (active on Subtitles, Map, Briefs, District Names, Social Club) NEVER double-reverses Arabic,
-     while Options Menu (BiDi OFF) ignores 0-width LRO/PDF and stays 100% RTL!
-  2. Uses real '\\n' in Common.locres (fixes literal '~n~' in Social Club) and '~n~' in GTASA.locres.
-  3. Keeps the 6 Beckett bitmap-font tab/button headers in Common.locres in English to prevent blank white boxes.
+  1. Keeps Beckett English-only bitmap-font sidebar/tab/Back buttons in English (zero blank white boxes!).
+  2. html.unescape() fixes all '&quot;' / '&amp;' / '&#39;' entities + keeps Take-Two/Rockstar legal notice clean.
+  3. Applies U+202D/U+202C LRO/PDF ONLY to GTASA.locres and multi-line Common.locres text,
+     removing the tiny '|' bars from single-line Options Menu rows while keeping Subtitles/Map/Briefs 100% RTL!
 """
 
 import argparse
+import html
 import json
 import re
 import shutil
@@ -35,14 +35,23 @@ TOKEN_RE = re.compile(
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 TAG_STRIP_RE = re.compile(r"~[^~\r\n]+~|<[^>]+>")
 
-# Common.locres keys rendered with Beckett English-only bitmap font (leave English so tabs/Back are never blank)
-BITMAP_FONT_KEYS_COMMON = {
+# Keys rendered with Beckett English-only bitmap font (leave English so no blank white boxes appear)
+BITMAP_FONT_KEYS = {
     "controls",
     "gameplay",
     "graphics",
     "audio",
     "accessibility",
     "back",
+    "briefs",
+    "exit",
+    "game",
+    "map",
+    "options",
+    "resume",
+    "social club",
+    "start",
+    "stats",
 }
 
 ALL_FONT_SLOTS = [
@@ -77,7 +86,7 @@ def _sentinel(idx: int) -> str:
     return "\u200F" + chr(0xE000 + idx) + "\u200F"
 
 
-def shape_single_line(line: str) -> str:
+def shape_single_line(line: str, use_lro: bool = True) -> str:
     if not line or not ARABIC_RE.search(line):
         return line
     tokens = []
@@ -90,13 +99,15 @@ def shape_single_line(line: str) -> str:
     vis = get_display(reshaped, base_dir="R")
     for idx, tok in enumerate(tokens):
         vis = vis.replace(_sentinel(idx), tok).replace(chr(0xE000 + idx), tok)
-    # U+202D (LRO) + U+202C (PDF) prevents UE4 ICU BiDi from double-reversing visual Arabic
-    return "\u202D" + vis + "\u202C"
+    if use_lro:
+        return "\u202D" + vis + "\u202C"
+    return vis
 
 
-def shape_gta_arabic(text: str, wrap_width: int = 58, nl_token: str = "~n~") -> str:
+def shape_gta_arabic(text: str, wrap_width: int = 58, nl_token: str = "~n~", use_lro: bool = True) -> str:
     if not text or not ARABIC_RE.search(text):
         return text
+    text = html.unescape(text)
     if nl_token == "\n":
         text = text.replace("~n~", "\n").replace("~N~", "\n")
     parts = re.split(r"(~[nN]~|\r\n|\n)", text)
@@ -115,10 +126,10 @@ def shape_gta_arabic(text: str, wrap_width: int = 58, nl_token: str = "~n~") -> 
             for wl in wrapped:
                 for idx, tok in enumerate(toks):
                     wl = wl.replace(f"__T{idx}__", tok)
-                shaped_lines.append(shape_single_line(wl))
+                shaped_lines.append(shape_single_line(wl, use_lro=use_lro))
             out_parts.append(nl_token.join(shaped_lines))
         else:
-            out_parts.append(shape_single_line(part))
+            out_parts.append(shape_single_line(part, use_lro=use_lro))
     return "".join(out_parts)
 
 
@@ -130,6 +141,11 @@ def is_translatable(s: str) -> bool:
     if not re.search(r"[A-Za-z]", t): return False
     if len(t) > 1200: return False
     return True
+
+
+def is_legal_boilerplate(s: str) -> bool:
+    low = s.lower()
+    return ("take-two interactive" in low) or ("trademarks of take-two" in low) or ("all rights reserved" in low and len(s) > 120)
 
 
 def encode_fstring(s: str) -> bytes:
@@ -170,6 +186,7 @@ def protect_for_mt(s: str):
 
 
 def restore_after_mt(s: str, toks: list[str]) -> str:
+    s = html.unescape(s)
     for idx, tok in enumerate(toks):
         s = re.sub(rf"\[\[\s*[xX]\s*{idx}\s*\]\]", lambda _: tok, s)
     return s
@@ -218,7 +235,7 @@ def translate_offline_argos(pending: list[str], cache: dict, cache_path: Path):
             print(f"[{pct:5.1f}% | {done:,}/{total:,}] {rate:.0f} str/s | elapsed {elapsed:.0f}s | ETA {eta:.0f}s", flush=True)
 
     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"DONE! Translated {len(cache):,} Arabic strings in {time.time() - t0:.1f}s (100% offline!).", flush=True)
+    print(f"DONE! Translated {len(cache):,} Arabic strings in {time.time() - t0:.1f}s.", flush=True)
 
 
 def main():
@@ -261,7 +278,7 @@ def main():
     if args.mode == "full_free" and unique_pending:
         translate_offline_argos(unique_pending, cache, cache_path)
     else:
-        print(f"Mode={args.mode}: applying {len(cache):,} curated Arabic strings.", flush=True)
+        print(f"Mode={args.mode}: applying {len(cache):,} Arabic strings from cache+glossary.", flush=True)
 
     loc_targets = {
         "Common.locres": ("Gameface/Content/Localization/Common/en/Common.locres", "\n"),
@@ -272,12 +289,14 @@ def main():
         new_items = []
         tr_cnt = 0
         for s, ref in items:
-            if name == "Common.locres" and s.strip().lower() in BITMAP_FONT_KEYS_COMMON:
+            if s.strip().lower() in BITMAP_FONT_KEYS or is_legal_boilerplate(s):
                 new_items.append((s, ref))
                 continue
             ar = cache.get(s) or cache.get(s.strip())
             if ar and ARABIC_RE.search(ar):
-                new_items.append((shape_gta_arabic(ar, nl_token=nl_tok), ref))
+                # GTASA.locres uses UE4 BiDi (needs LRO); Common.locres single-line Options has BiDi OFF (no LRO -> no '|' bars!)
+                use_lro = (name == "GTASA.locres") or ("\n" in s) or (len(s) > 45)
+                new_items.append((shape_gta_arabic(ar, nl_token=nl_tok, use_lro=use_lro), ref))
                 tr_cnt += 1
             else:
                 new_items.append((s, ref))
@@ -287,7 +306,7 @@ def main():
         dst = out_pak_root / rel_out
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(patched)
-        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped+LRO strings (verified).", flush=True)
+        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} clean Arabic strings (verified).", flush=True)
 
     font_bytes = (root / "font" / "ArabicGameFont.ttf").read_bytes()
     for slot in ALL_FONT_SLOTS:
