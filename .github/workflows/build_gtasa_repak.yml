@@ -1,0 +1,43 @@
+name: Build Official UE4 v11 Arabic Patch (repak)
+
+on:
+  push:
+    paths:
+      - 'gtasa_pak_root/**'
+      - '.github/workflows/build_gtasa_repak.yml'
+  workflow_dispatch:
+
+jobs:
+  pack-with-repak:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Official repak CLI (trumank/repak)
+        run: |
+          REPAK_URL=$(curl -s https://api.github.com/repos/trumank/repak/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if 'x86_64-unknown-linux-gnu' in a['name'] and a['name'].endswith('.tar.xz')))")
+          echo "Downloading: $REPAK_URL"
+          curl -L "$REPAK_URL" -o /tmp/repak.tar.xz
+          mkdir -p /tmp/repak_bin
+          tar -xJf /tmp/repak.tar.xz -C /tmp/repak_bin
+          REPAK=$(find /tmp/repak_bin -name "repak" -type f | head -n 1)
+          chmod +x "$REPAK"
+          sudo mv "$REPAK" /usr/local/bin/repak
+          repak --version
+
+      - name: Pack Official UE4 v11 Patch (pakchunk99-ps5_p.pak)
+        run: |
+          repak pack --version V11 --mount-point "../../../" gtasa_pak_root pakchunk99-ps5_p.pak
+          echo "=== VERIFY PAK INFO ==="
+          repak info pakchunk99-ps5_p.pak
+          echo "=== VERIFY PAK FILE LIST ==="
+          repak list pakchunk99-ps5_p.pak
+          ls -lh pakchunk99-ps5_p.pak
+
+      - name: Upload Official Arabic Patch Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtasa-ps5-arabic-official-repak
+          path: pakchunk99-ps5_p.pak
