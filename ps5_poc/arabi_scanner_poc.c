@@ -1,7 +1,11 @@
 /*
- * PS5 Arabi POC 2 (v1.1): Universal Running-Game Scanner & Selective Language/Font Extractor
- * Target: PS5 Firmware 5.50 (Orbis OS / etaHEN / elfldr) via ps5-payload-sdk
- * Features live PS5 on-screen notifications for start, game name, paths, extraction progress, and errors.
+ * PS5 Arabi POC 2 (v1.2): Universal Running-Game Scanner (PS4 FPKG + PS5 FPKG + PS5 ShadowMount/exFAT)
+ * Target: PS5 Firmware 5.50 (Orbis OS / etaHEN / ShadowMount+) via ps5-payload-sdk
+ *
+ * Improvements in v1.2:
+ * - Scans BOTH /mnt/sandbox/pfsmnt/ (PS4/PS5 FPKGs) AND /mnt/sandbox/<TITLE_ID>_000/app0 (PS5 ShadowMount+/exFAT/Dumps).
+ * - Exports full file tree list to /data/arabi_poc/all_files_<TITLE_ID>.txt for 100% accurate AI language detection.
+ * - Live PS5 on-screen notifications with game name, mount path, file count, and extracted size.
  */
 
 #include <stdio.h>
@@ -17,6 +21,7 @@
 #include "ps5_notify.h"
 
 #define PFSMNT_DIR      "/mnt/sandbox/pfsmnt"
+#define SANDBOX_DIR     "/mnt/sandbox"
 #define OUT_ROOT        "/data/arabi_poc"
 #define MAX_EXTRACT_MB  150ULL
 #define MAX_EXTRACT_B   (MAX_EXTRACT_MB * 1024ULL * 1024ULL)
@@ -63,11 +68,14 @@ static int mkdir_p(const char *path) {
     return mkdir(tmp, 0777) == 0 || errno == EEXIST ? 0 : -1;
 }
 
-/* Reads game title from PS5 param.json or PS4 param.sfo if accessible */
+static int dir_exists(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+}
+
 static void read_game_name(const char *mount_path, const char *title_id, char *out_name, size_t out_len) {
     snprintf(out_name, out_len, "%s", title_id);
 
-    /* Try PS5 sce_sys/param.json first */
     char json_path[1024];
     snprintf(json_path, sizeof(json_path), "%s/sce_sys/param.json", mount_path);
     FILE *fp = fopen(json_path, "rb");
@@ -95,7 +103,6 @@ static void read_game_name(const char *mount_path, const char *title_id, char *o
         }
     }
 
-    /* Try PS4 sce_sys/param.sfo */
     char sfo_path[1024];
     snprintf(sfo_path, sizeof(sfo_path), "%s/sce_sys/param.sfo", mount_path);
     fp = fopen(sfo_path, "rb");
@@ -214,6 +221,7 @@ static void walk_dir(
     const char *rel,
     const char *extract_root,
     FILE *report_fp,
+    FILE *all_fp,
     int *first_entry,
     ScanStats *stats
 ) {
@@ -244,10 +252,14 @@ static void walk_dir(
         if (stat(child_full, &st) != 0) continue;
 
         if (S_ISDIR(st.st_mode)) {
-            walk_dir(root, child_rel, extract_root, report_fp, first_entry, stats);
+            walk_dir(root, child_rel, extract_root, report_fp, all_fp, first_entry, stats);
         } else if (S_ISREG(st.st_mode)) {
             stats->total_files++;
             stats->total_bytes += (uint64_t)st.st_size;
+
+            if (all_fp) {
+                fprintf(all_fp, "%llu\t%s\n", (unsigned long long)st.st_size, child_rel);
+            }
 
             if (is_localization_or_font(child_rel)) {
                 stats->matched_files++;
@@ -280,31 +292,53 @@ static void walk_dir(
 }
 
 static int find_mounted_game(char *out_mount, size_t mount_len, char *out_title_id, size_t tid_len) {
+    /* 1. Check /mnt/sandbox/pfsmnt/ (PS4 FPKGs & PS5 FPKGs) */
     DIR *d = opendir(PFSMNT_DIR);
-    if (!d) return -1;
-
-    struct dirent *ent;
-    int found = 0;
-    while ((ent = readdir(d)) != NULL) {
-        if (strncmp(ent->d_name, "CUSA", 4) == 0 || strncmp(ent->d_name, "PPSA", 4) == 0) {
-            if (strstr(ent->d_name, "-app0-patch0-union") != NULL) {
-                snprintf(out_mount, mount_len, "%s/%s", PFSMNT_DIR, ent->d_name);
-                snprintf(out_title_id, tid_len, "%.9s", ent->d_name);
-                found = 1;
-                break;
-            } else if (!found && strstr(ent->d_name, "-app0") != NULL) {
-                snprintf(out_mount, mount_len, "%s/%s", PFSMNT_DIR, ent->d_name);
-                snprintf(out_title_id, tid_len, "%.9s", ent->d_name);
-                found = 1;
+    if (d) {
+        struct dirent *ent;
+        int found = 0;
+        while ((ent = readdir(d)) != NULL) {
+            if (strncmp(ent->d_name, "CUSA", 4) == 0 || strncmp(ent->d_name, "PPSA", 4) == 0) {
+                if (strstr(ent->d_name, "-app0-patch0-union") != NULL) {
+                    snprintf(out_mount, mount_len, "%s/%s", PFSMNT_DIR, ent->d_name);
+                    snprintf(out_title_id, tid_len, "%.9s", ent->d_name);
+                    closedir(d);
+                    return 0;
+                } else if (!found && strstr(ent->d_name, "-app0") != NULL) {
+                    snprintf(out_mount, mount_len, "%s/%s", PFSMNT_DIR, ent->d_name);
+                    snprintf(out_title_id, tid_len, "%.9s", ent->d_name);
+                    found = 1;
+                }
             }
         }
+        closedir(d);
+        if (found) return 0;
     }
-    closedir(d);
-    return found ? 0 : -1;
+
+    /* 2. Check /mnt/sandbox/<TITLE_ID>_000/app0 (PS5 ShadowMount+ / exFAT / Folder Dumps!) */
+    d = opendir(SANDBOX_DIR);
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            if (strncmp(ent->d_name, "PPSA", 4) == 0 || strncmp(ent->d_name, "CUSA", 4) == 0) {
+                char candidate[1024];
+                snprintf(candidate, sizeof(candidate), "%s/%s/app0", SANDBOX_DIR, ent->d_name);
+                if (dir_exists(candidate)) {
+                    snprintf(out_mount, mount_len, "%s", candidate);
+                    snprintf(out_title_id, tid_len, "%.9s", ent->d_name);
+                    closedir(d);
+                    return 0;
+                }
+            }
+        }
+        closedir(d);
+    }
+
+    return -1;
 }
 
 int main(void) {
-    ps5_notify("PS5 Arabi Scanner: Started!\nChecking running game in /mnt/sandbox/pfsmnt...");
+    ps5_notify("PS5 Arabi Scanner v1.2: Started!\nChecking PS4 FPKG & PS5 ShadowMount/exFAT...");
     mkdir_p(OUT_ROOT);
 
     char mount_path[512] = {0};
@@ -317,26 +351,30 @@ int main(void) {
     }
 
     if (find_mounted_game(mount_path, sizeof(mount_path), title_id, sizeof(title_id)) != 0) {
-        fprintf(log_fp, "FAIL: No running PS4 (CUSA*) or PS5 (PPSA*) game found in %s\n", PFSMNT_DIR);
+        fprintf(log_fp, "FAIL: No running PS4/PS5 game found in %s or %s/*_000/app0\n", PFSMNT_DIR, SANDBOX_DIR);
         fclose(log_fp);
-        ps5_notify("PS5 Arabi ERROR:\nNo running game found!\nLaunch a game FIRST, then send payload.");
+        ps5_notify("PS5 Arabi ERROR:\nNo running game found!\nLaunch a game FIRST, then run scanner.");
         return 1;
     }
 
     char game_name[128] = {0};
     read_game_name(mount_path, title_id, game_name, sizeof(game_name));
 
-    ps5_notify("Game Detected:\n%s (%s)\nMount: %s\nScanning language & font files...",
+    ps5_notify("Game Detected (v1.2):\n%s (%s)\nMount: %s\nScanning all files...",
                game_name, title_id, mount_path);
 
     char extract_dir[512];
     char report_path[512];
+    char all_files_path[512];
     snprintf(extract_dir, sizeof(extract_dir), "%s/extracted/%s", OUT_ROOT, title_id);
     snprintf(report_path, sizeof(report_path), "%s/scan_%s.json", OUT_ROOT, title_id);
+    snprintf(all_files_path, sizeof(all_files_path), "%s/all_files_%s.txt", OUT_ROOT, title_id);
     mkdir_p(extract_dir);
 
     FILE *rfp = fopen(report_path, "w");
+    FILE *afp = fopen(all_files_path, "w");
     if (!rfp) {
+        if (afp) fclose(afp);
         fprintf(log_fp, "FAIL: Cannot write report %s\n", report_path);
         fclose(log_fp);
         ps5_notify("PS5 Arabi ERROR:\nCannot create report file:\n%s", report_path);
@@ -349,7 +387,7 @@ int main(void) {
 
     fprintf(rfp, "{\n  \"game_name\": \"%s\",\n  \"title_id\": \"%s\",\n  \"mount_path\": \"%s\",\n  \"files\": [",
             game_name, title_id, mount_path);
-    walk_dir(mount_path, "", extract_dir, rfp, &first_entry, &stats);
+    walk_dir(mount_path, "", extract_dir, rfp, afp, &first_entry, &stats);
     fprintf(rfp, "\n  ],\n");
     fprintf(rfp, "  \"summary\": {\n");
     fprintf(rfp, "    \"total_files\": %llu,\n", (unsigned long long)stats.total_files);
@@ -361,6 +399,7 @@ int main(void) {
     fprintf(rfp, "    \"skipped_large\": %llu\n", (unsigned long long)stats.skipped_large);
     fprintf(rfp, "  }\n}\n");
     fclose(rfp);
+    if (afp) fclose(afp);
 
     fprintf(log_fp, "PASS: Scanned %s (%s)\n", game_name, title_id);
     fprintf(log_fp, "Mount: %s\n", mount_path);
@@ -370,14 +409,15 @@ int main(void) {
             (unsigned long long)stats.matched_files, (double)stats.matched_bytes / (1024.0 * 1024.0));
     fprintf(log_fp, "Extracted safely: %llu (%.2f MB)\n",
             (unsigned long long)stats.extracted_files, (double)stats.extracted_bytes / (1024.0 * 1024.0));
+    fprintf(log_fp, "All files list: %s\n", all_files_path);
     fprintf(log_fp, "Extracted folder: %s\n", extract_dir);
-    fprintf(log_fp, "Report saved to: %s\n", report_path);
     fclose(log_fp);
 
-    ps5_notify("PS5 Arabi DONE! (%s)\nExtracted %llu files (%.1f MB)\nSaved in: %s",
+    ps5_notify("PS5 Arabi v1.2 DONE! (%s)\nTotal: %llu files | Extracted: %llu (%.1f MB)\nList: %s",
                game_name,
+               (unsigned long long)stats.total_files,
                (unsigned long long)stats.extracted_files,
                (double)stats.extracted_bytes / (1024.0 * 1024.0),
-               extract_dir);
+               all_files_path);
     return 0;
 }
