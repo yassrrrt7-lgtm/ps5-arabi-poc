@@ -1,8 +1,11 @@
 """
-GTA San Andreas Definitive Edition (PS5 PPSA03524) — OFFLINE ZERO-KEY Arabic Localization Builder (v4)
-Modes:
-  --mode menus_fast : Hand-crafted Arabic for Menus/Settings/Pause/HUD (~20 seconds, 0 keys)
-  --mode full_free  : Hand-crafted Menus + 100% Offline Argos Translate (CTranslate2 en->ar, 0 API keys, 0 rate limits!)
+GTA San Andreas Definitive Edition (PS5 PPSA03524) — OFFLINE ZERO-KEY Arabic Localization Builder (v5)
+Fixes from real PS5 5.50 TV verification:
+  1. Wraps shaped visual Arabic lines in U+202D (LRO) ... U+202C (PDF) so UE4 ICU BiDi
+     (active on Subtitles, Map, Briefs, District Names, Social Club) NEVER double-reverses Arabic,
+     while Options Menu (BiDi OFF) ignores 0-width LRO/PDF and stays 100% RTL!
+  2. Uses real '\\n' in Common.locres (fixes literal '~n~' in Social Club) and '~n~' in GTASA.locres.
+  3. Keeps the 6 Beckett bitmap-font tab/button headers in Common.locres in English to prevent blank white boxes.
 """
 
 import argparse
@@ -32,14 +35,21 @@ TOKEN_RE = re.compile(
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 TAG_STRIP_RE = re.compile(r"~[^~\r\n]+~|<[^>]+>")
 
-# ALL 24 TrueType/OpenType font slots in GTA San Andreas PS5 pakchunk0-ps5.pak
+# Common.locres keys rendered with Beckett English-only bitmap font (leave English so tabs/Back are never blank)
+BITMAP_FONT_KEYS_COMMON = {
+    "controls",
+    "gameplay",
+    "graphics",
+    "audio",
+    "accessibility",
+    "back",
+}
+
 ALL_FONT_SLOTS = [
-    # Gameface Common .ufont (4)
     "Gameface/Content/Common/Fonts/BankGothicMdBT.ufont",
     "Gameface/Content/Common/Fonts/Beckett.ufont",
     "Gameface/Content/Common/Fonts/OldEnglishCom.ufont",
     "Gameface/Content/Common/Fonts/RUS_Beckett-KanzleiCYRegular.ufont",
-    # Engine EngineFonts .ufont (7)
     "Engine/Content/EngineFonts/Faces/DroidSansFallback.ufont",
     "Engine/Content/EngineFonts/Faces/DroidSansMono.ufont",
     "Engine/Content/EngineFonts/Faces/RobotoRegular.ufont",
@@ -47,7 +57,6 @@ ALL_FONT_SLOTS = [
     "Engine/Content/EngineFonts/Faces/RobotoLight.ufont",
     "Engine/Content/EngineFonts/Faces/RobotoItalic.ufont",
     "Engine/Content/EngineFonts/Faces/RobotoBoldItalic.ufont",
-    # Engine Slate .ttf (13)
     "Engine/Content/Slate/Fonts/DroidSansFallback.ttf",
     "Engine/Content/Slate/Fonts/DroidSansMono.ttf",
     "Engine/Content/Slate/Fonts/NotoNaskhArabicUI-Regular.ttf",
@@ -81,17 +90,20 @@ def shape_single_line(line: str) -> str:
     vis = get_display(reshaped, base_dir="R")
     for idx, tok in enumerate(tokens):
         vis = vis.replace(_sentinel(idx), tok).replace(chr(0xE000 + idx), tok)
-    return vis
+    # U+202D (LRO) + U+202C (PDF) prevents UE4 ICU BiDi from double-reversing visual Arabic
+    return "\u202D" + vis + "\u202C"
 
 
-def shape_gta_arabic(text: str, wrap_width: int = 58) -> str:
+def shape_gta_arabic(text: str, wrap_width: int = 58, nl_token: str = "~n~") -> str:
     if not text or not ARABIC_RE.search(text):
         return text
+    if nl_token == "\n":
+        text = text.replace("~n~", "\n").replace("~N~", "\n")
     parts = re.split(r"(~[nN]~|\r\n|\n)", text)
     out_parts = []
     for part in parts:
         if part in ("~n~", "~N~", "\r\n", "\n") or not part:
-            out_parts.append(part)
+            out_parts.append(nl_token if part in ("~n~", "~N~", "\r\n", "\n") else part)
             continue
         if len(TAG_STRIP_RE.sub("", part)) > wrap_width:
             toks = []
@@ -104,7 +116,7 @@ def shape_gta_arabic(text: str, wrap_width: int = 58) -> str:
                 for idx, tok in enumerate(toks):
                     wl = wl.replace(f"__T{idx}__", tok)
                 shaped_lines.append(shape_single_line(wl))
-            out_parts.append("~n~".join(shaped_lines))
+            out_parts.append(nl_token.join(shaped_lines))
         else:
             out_parts.append(shape_single_line(part))
     return "".join(out_parts)
@@ -165,7 +177,6 @@ def restore_after_mt(s: str, toks: list[str]) -> str:
 
 def translate_offline_argos(pending: list[str], cache: dict, cache_path: Path):
     import argostranslate.package
-    import argostranslate.translate
     import ctranslate2
     import sentencepiece as spm
 
@@ -181,7 +192,6 @@ def translate_offline_argos(pending: list[str], cache: dict, cache_path: Path):
     model_dir = pkg_dir / "model"
     sp_model = pkg_dir / "sentencepiece.model"
 
-    print(f"Loaded offline CTranslate2 model from {model_dir}", flush=True)
     sp = spm.SentencePieceProcessor(model_file=str(sp_model))
     translator = ctranslate2.Translator(str(model_dir), device="cpu", intra_threads=4, inter_threads=2)
 
@@ -254,17 +264,20 @@ def main():
         print(f"Mode={args.mode}: applying {len(cache):,} curated Arabic strings.", flush=True)
 
     loc_targets = {
-        "Common.locres": "Gameface/Content/Localization/Common/en/Common.locres",
-        "GTASA.locres": "Gameface/Content/Localization/GTASA/en/GTASA.locres",
+        "Common.locres": ("Gameface/Content/Localization/Common/en/Common.locres", "\n"),
+        "GTASA.locres": ("Gameface/Content/Localization/GTASA/en/GTASA.locres", "~n~"),
     }
-    for name, rel_out in loc_targets.items():
+    for name, (rel_out, nl_tok) in loc_targets.items():
         raw, items, str_off, end_pos = files_data[name]
         new_items = []
         tr_cnt = 0
         for s, ref in items:
+            if name == "Common.locres" and s.strip().lower() in BITMAP_FONT_KEYS_COMMON:
+                new_items.append((s, ref))
+                continue
             ar = cache.get(s) or cache.get(s.strip())
             if ar and ARABIC_RE.search(ar):
-                new_items.append((shape_gta_arabic(ar), ref))
+                new_items.append((shape_gta_arabic(ar, nl_token=nl_tok), ref))
                 tr_cnt += 1
             else:
                 new_items.append((s, ref))
@@ -274,14 +287,14 @@ def main():
         dst = out_pak_root / rel_out
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(patched)
-        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped strings (verified).", flush=True)
+        print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped+LRO strings (verified).", flush=True)
 
     font_bytes = (root / "font" / "ArabicGameFont.ttf").read_bytes()
     for slot in ALL_FONT_SLOTS:
         dst = out_pak_root / slot
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(font_bytes)
-    print(f"All {len(ALL_FONT_SLOTS)} Arabic+Latin font slots ready (11 .ufont + 13 Slate .ttf).", flush=True)
+    print(f"All {len(ALL_FONT_SLOTS)} Arabic+Latin font slots ready.", flush=True)
 
 
 if __name__ == "__main__":
