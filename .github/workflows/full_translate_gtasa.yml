@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "full_free (اللعبة كاملة مجاناً بدون مفتاح خلال 2-4 دقائق) or menus_fast (القوائم فقط في 20 ثانية)"
+        description: "full_free (اللعبة كاملة أوفلاين بدون حظر خلال 3-6 دقائق) or menus_fast (القوائم فقط في 20 ثانية)"
         required: true
         default: "full_free"
         type: choice
@@ -19,12 +19,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install Free Python Libraries (0 Keys)
         run: |
           python3 -m pip install --upgrade pip
-          pip install arabic-reshaper python-bidi requests
+          pip install arabic-reshaper python-bidi
+          if [ "${{ github.event.inputs.mode }}" = "full_free" ]; then
+            pip install argostranslate
+          fi
 
-      - name: Translate & Shape Connected Arabic (Fast 10-Thread)
+      - name: Translate & Shape Connected Arabic (Offline CTranslate2 + All 24 Fonts)
         run: python3 -u gtasa_full/full_localize_gtasa.py --mode "${{ github.event.inputs.mode }}"
 
       - name: Download Official repak CLI
@@ -41,7 +48,7 @@ jobs:
 
       - name: Pack Official UE4 v11 pakchunk0-ps5_999_p.pak
         run: |
-          repak pack --version V11 --mount-point "../../../" gtasa_full_pak_root pakchunk0-ps5_999_p.pak
+          repak pack --version V11 --compression Zlib --mount-point "../../../" gtasa_full_pak_root pakchunk0-ps5_999_p.pak
           repak info pakchunk0-ps5_999_p.pak
           repak list pakchunk0-ps5_999_p.pak
           ls -lh pakchunk0-ps5_999_p.pak

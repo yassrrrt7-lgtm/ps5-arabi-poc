@@ -1,23 +1,20 @@
 """
-GTA San Andreas Definitive Edition (PS5 PPSA03524) — FAST ZERO-KEY Free Arabic Localization Builder (v3)
+GTA San Andreas Definitive Edition (PS5 PPSA03524) — OFFLINE ZERO-KEY Arabic Localization Builder (v4)
 Modes:
   --mode menus_fast : Hand-crafted Arabic for Menus/Settings/Pause/HUD (~20 seconds, 0 keys)
-  --mode full_free  : Hand-crafted Menus + 10-Thread Fast Free Google Translate for ALL 16,941 strings (~2-4 minutes, 0 keys!)
+  --mode full_free  : Hand-crafted Menus + 100% Offline Argos Translate (CTranslate2 en->ar, 0 API keys, 0 rate limits!)
 """
 
 import argparse
-import concurrent.futures
 import json
 import re
 import shutil
 import struct
 import textwrap
-import threading
 import time
 from pathlib import Path
 
 import arabic_reshaper
-import requests
 from bidi.algorithm import get_display
 
 RESHAPER = arabic_reshaper.ArabicReshaper(configuration={
@@ -34,6 +31,37 @@ TOKEN_RE = re.compile(
 )
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 TAG_STRIP_RE = re.compile(r"~[^~\r\n]+~|<[^>]+>")
+
+# ALL 24 TrueType/OpenType font slots in GTA San Andreas PS5 pakchunk0-ps5.pak
+ALL_FONT_SLOTS = [
+    # Gameface Common .ufont (4)
+    "Gameface/Content/Common/Fonts/BankGothicMdBT.ufont",
+    "Gameface/Content/Common/Fonts/Beckett.ufont",
+    "Gameface/Content/Common/Fonts/OldEnglishCom.ufont",
+    "Gameface/Content/Common/Fonts/RUS_Beckett-KanzleiCYRegular.ufont",
+    # Engine EngineFonts .ufont (7)
+    "Engine/Content/EngineFonts/Faces/DroidSansFallback.ufont",
+    "Engine/Content/EngineFonts/Faces/DroidSansMono.ufont",
+    "Engine/Content/EngineFonts/Faces/RobotoRegular.ufont",
+    "Engine/Content/EngineFonts/Faces/RobotoBold.ufont",
+    "Engine/Content/EngineFonts/Faces/RobotoLight.ufont",
+    "Engine/Content/EngineFonts/Faces/RobotoItalic.ufont",
+    "Engine/Content/EngineFonts/Faces/RobotoBoldItalic.ufont",
+    # Engine Slate .ttf (13)
+    "Engine/Content/Slate/Fonts/DroidSansFallback.ttf",
+    "Engine/Content/Slate/Fonts/DroidSansMono.ttf",
+    "Engine/Content/Slate/Fonts/NotoNaskhArabicUI-Regular.ttf",
+    "Engine/Content/Slate/Fonts/NotoSansThai-Regular.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-Black.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-BlackItalic.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-Bold.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-BoldCondensed.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-BoldCondensedItalic.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-BoldItalic.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-Italic.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-Light.ttf",
+    "Engine/Content/Slate/Fonts/Roboto-Regular.ttf",
+]
 
 
 def _sentinel(idx: int) -> str:
@@ -122,7 +150,6 @@ def write_locres_strings(orig_buf: bytes, new_items, str_arr_off: int, end_pos: 
 
 
 def protect_for_mt(s: str):
-    # Normalize real newlines to ~n~ so batch newline splitting is 100% clean
     s_clean = s.replace("\r\n", "~n~").replace("\n", "~n~")
     toks = []
     def repl(m):
@@ -136,103 +163,52 @@ def restore_after_mt(s: str, toks: list[str]) -> str:
     return s
 
 
-_THREAD_LOCAL = threading.local()
+def translate_offline_argos(pending: list[str], cache: dict, cache_path: Path):
+    import argostranslate.package
+    import argostranslate.translate
+    import ctranslate2
+    import sentencepiece as spm
 
+    print("Downloading official Argos Translate en->ar offline model (0 API keys, 0 rate limits)...", flush=True)
+    argostranslate.package.update_package_index()
+    available = argostranslate.package.get_available_packages()
+    pkg = next(p for p in available if p.from_code == "en" and p.to_code == "ar")
+    argostranslate.package.install_from_path(pkg.download())
 
-def _get_session() -> requests.Session:
-    sess = getattr(_THREAD_LOCAL, "sess", None)
-    if sess is None:
-        sess = requests.Session()
-        sess.headers.update({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
-        _THREAD_LOCAL.sess = sess
-    return sess
+    installed = argostranslate.package.get_installed_packages()
+    en_ar_pkg = next(p for p in installed if p.from_code == "en" and p.to_code == "ar")
+    pkg_dir = Path(en_ar_pkg.package_path)
+    model_dir = pkg_dir / "model"
+    sp_model = pkg_dir / "sentencepiece.model"
 
+    print(f"Loaded offline CTranslate2 model from {model_dir}", flush=True)
+    sp = spm.SentencePieceProcessor(model_file=str(sp_model))
+    translator = ctranslate2.Translator(str(model_dir), device="cpu", intra_threads=4, inter_threads=2)
 
-def _gtx_translate(text: str) -> str:
-    sess = _get_session()
-    url = "https://translate.googleapis.com/translate_a/single"
-    for attempt in range(4):
-        try:
-            r = sess.post(
-                url,
-                params={"client": "gtx", "sl": "en", "tl": "ar", "dt": "t"},
-                data={"q": text},
-                timeout=12,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return "".join(seg[0] for seg in data[0] if seg and seg[0])
-            if r.status_code in (429, 503):
-                time.sleep(2.5 * (attempt + 1))
-                continue
-        except Exception:
-            time.sleep(1.5 * (attempt + 1))
-    return ""
-
-
-def _translate_chunk_recursive(chunk: list[tuple[str, str, list[str]]]) -> dict[str, str]:
-    if not chunk:
-        return {}
-    joined = "\n".join(prot for _, prot, _ in chunk)
-    out_text = _gtx_translate(joined)
-    if out_text:
-        lines = out_text.splitlines()
-        if len(lines) == len(chunk):
-            res = {}
-            for (orig_s, _, toks), ar_line in zip(chunk, lines):
-                res[orig_s] = restore_after_mt(ar_line.strip(), toks)
-            return res
-    if len(chunk) == 1:
-        orig_s, _, toks = chunk[0]
-        if out_text:
-            return {orig_s: restore_after_mt(out_text.strip(), toks)}
-        return {}
-    # Binary split on mismatch instead of slow 1-by-1
-    mid = len(chunk) // 2
-    res = _translate_chunk_recursive(chunk[:mid])
-    res.update(_translate_chunk_recursive(chunk[mid:]))
-    return res
-
-
-def translate_free_google_fast(pending: list[str], cache: dict, cache_path: Path):
-    batches = []
-    cur_batch, cur_len = [], 0
-    for s in pending:
-        prot, toks = protect_for_mt(s)
-        item_len = len(prot) + 1
-        if cur_batch and (cur_len + item_len > 3600 or len(cur_batch) >= 35):
-            batches.append(cur_batch)
-            cur_batch, cur_len = [], 0
-        cur_batch.append((s, prot, toks))
-        cur_len += item_len
-    if cur_batch:
-        batches.append(cur_batch)
-
-    total_batches = len(batches)
-    print(f"FAST 10-thread translation: {len(pending):,} strings in {total_batches} batches (0 API keys)...", flush=True)
+    total = len(pending)
+    BATCH = 64
     t0 = time.time()
-    done_batches = 0
-    lock = threading.Lock()
+    print(f"Translating {total:,} strings offline in batches of {BATCH}...", flush=True)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-        futs = [ex.submit(_translate_chunk_recursive, b) for b in batches]
-        for fut in concurrent.futures.as_completed(futs):
-            part_res = fut.result()
-            with lock:
-                cache.update(part_res)
-                done_batches += 1
-                if done_batches % 25 == 0 or done_batches == total_batches:
-                    elapsed = time.time() - t0
-                    pct = (done_batches / total_batches) * 100
-                    print(
-                        f"[{pct:5.1f}% | Batch {done_batches}/{total_batches}] "
-                        f"Translated {len(cache):,} strings in {elapsed:.0f}s",
-                        flush=True,
-                    )
-                    cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    for start in range(0, total, BATCH):
+        chunk = pending[start:start + BATCH]
+        protected_items = [protect_for_mt(s) for s in chunk]
+        tokenized = [sp.encode(prot, out_type=str) for prot, _ in protected_items]
+        results = translator.translate_batch(tokenized, beam_size=2, max_batch_size=BATCH)
+        for (orig_s, (_, toks)), res in zip(zip(chunk, protected_items), results):
+            ar_raw = sp.decode(res.hypotheses[0])
+            cache[orig_s] = restore_after_mt(ar_raw.strip(), toks)
+
+        done = min(start + BATCH, total)
+        if done % (BATCH * 10) == 0 or done == total:
+            elapsed = time.time() - t0
+            pct = (done / total) * 100
+            rate = done / max(elapsed, 0.1)
+            eta = (total - done) / max(rate, 0.1)
+            print(f"[{pct:5.1f}% | {done:,}/{total:,}] {rate:.0f} str/s | elapsed {elapsed:.0f}s | ETA {eta:.0f}s", flush=True)
 
     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"DONE translating! Total Arabic strings in cache: {len(cache):,} ({time.time() - t0:.1f}s)", flush=True)
+    print(f"DONE! Translated {len(cache):,} Arabic strings in {time.time() - t0:.1f}s (100% offline!).", flush=True)
 
 
 def main():
@@ -273,7 +249,7 @@ def main():
                 unique_pending.append(s)
 
     if args.mode == "full_free" and unique_pending:
-        translate_free_google_fast(unique_pending, cache, cache_path)
+        translate_offline_argos(unique_pending, cache, cache_path)
     else:
         print(f"Mode={args.mode}: applying {len(cache):,} curated Arabic strings.", flush=True)
 
@@ -301,21 +277,11 @@ def main():
         print(f"Wrote {rel_out}: {tr_cnt:,}/{len(items):,} Arabic shaped strings (verified).", flush=True)
 
     font_bytes = (root / "font" / "ArabicGameFont.ttf").read_bytes()
-    for slot in [
-        "Gameface/Content/Common/Fonts/BankGothicMdBT.ufont",
-        "Gameface/Content/Common/Fonts/Beckett.ufont",
-        "Gameface/Content/Common/Fonts/OldEnglishCom.ufont",
-        "Gameface/Content/Common/Fonts/RUS_Beckett-KanzleiCYRegular.ufont",
-        "Engine/Content/EngineFonts/Faces/RobotoRegular.ufont",
-        "Engine/Content/EngineFonts/Faces/RobotoBold.ufont",
-        "Engine/Content/EngineFonts/Faces/RobotoLight.ufont",
-        "Engine/Content/EngineFonts/Faces/RobotoItalic.ufont",
-        "Engine/Content/EngineFonts/Faces/RobotoBoldItalic.ufont",
-    ]:
+    for slot in ALL_FONT_SLOTS:
         dst = out_pak_root / slot
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(font_bytes)
-    print("All 9 Arabic+Latin font slots ready.", flush=True)
+    print(f"All {len(ALL_FONT_SLOTS)} Arabic+Latin font slots ready (11 .ufont + 13 Slate .ttf).", flush=True)
 
 
 if __name__ == "__main__":
