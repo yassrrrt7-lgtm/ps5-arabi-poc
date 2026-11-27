@@ -1,0 +1,53 @@
+name: Full GTA SA PS5 Arabic (Zero API Key)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full_free (اللعبة كاملة مجاناً بدون مفتاح) or menus_fast (القوائم فقط في 20 ثانية)"
+        required: true
+        default: "full_free"
+        type: choice
+        options:
+          - full_free
+          - menus_fast
+
+jobs:
+  translate-and-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Free Python Libraries (0 Keys)
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install arabic-reshaper python-bidi deep-translator
+
+      - name: Translate & Shape Connected Arabic
+        run: python3 gtasa_full/full_localize_gtasa.py --mode "${{ github.event.inputs.mode }}"
+
+      - name: Download Official repak CLI
+        run: |
+          REPAK_URL=$(curl -s https://api.github.com/repos/trumank/repak/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if 'x86_64-unknown-linux-gnu' in a['name'] and a['name'].endswith('.tar.xz')))")
+          curl -L "$REPAK_URL" -o /tmp/repak.tar.xz
+          mkdir -p /tmp/repak_bin
+          tar -xJf /tmp/repak.tar.xz -C /tmp/repak_bin
+          sudo mv "$(find /tmp/repak_bin -name repak -type f | head -n 1)" /usr/local/bin/repak
+          chmod +x /usr/local/bin/repak
+
+      - name: Pack Official UE4 v11 pakchunk0-ps5_999_p.pak
+        run: |
+          repak pack --version V11 --mount-point "../../../" gtasa_full_pak_root pakchunk0-ps5_999_p.pak
+          repak info pakchunk0-ps5_999_p.pak
+          repak list pakchunk0-ps5_999_p.pak
+          ls -lh pakchunk0-ps5_999_p.pak
+
+      - name: Upload Final Arabic Patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtasa-ps5-full-arabic-zero-key
+          path: |
+            pakchunk0-ps5_999_p.pak
+            gtasa_full/cache_ar.json
