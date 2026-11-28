@@ -607,7 +607,7 @@ def rebuild_unity_universal(raw_file: Path, out_file: Path, merged: dict, cfg: d
                 fonts_injected += 1
             except Exception:
                 pass
-    out_file.write_bytes(env.file.save(packer="lz4") if raw_file.suffix.lower()==".bundle" else env.file.save())
+    out_file.write_bytes(env.file.save(packer="lz4") if raw_file.suffix.lower() == ".bundle" else env.file.save())
     assert len(UnityPy.load(str(out_file)).objects) > 0, "Unity bundle integrity verification failed!"
     return patched_cnt, fonts_injected
 
@@ -989,18 +989,42 @@ def publish_multi_files(title_id: str, built_files: list[tuple[Path, str]], labe
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_files, release_assets = [], []
+    CHUNK_OUT = 15 * 1024 * 1024  # 15 MB safe limit for GitHub git push & Safari Blobs API
     for src_path, target_rel in built_files:
-        dst = out_dir / src_path.name
-        if dst.resolve() != src_path.resolve():
-            shutil.copy2(src_path, dst)
-        manifest_files.append({
-            "fname": dst.name,
-            "rel_path": target_rel,
-            "repo_path": f"hub_games/{title_id}/out/{dst.name}",
-            "size": dst.stat().st_size,
-            "sha256": sha256_file(dst),
-        })
-        release_assets.append(str(dst))
+        sz = src_path.stat().st_size
+        sha = sha256_file(src_path)
+        release_assets.append(str(src_path))
+        if sz <= CHUNK_OUT:
+            dst = out_dir / src_path.name
+            if dst.resolve() != src_path.resolve():
+                shutil.copy2(src_path, dst)
+            manifest_files.append({
+                "fname": dst.name,
+                "rel_path": target_rel,
+                "repo_path": f"hub_games/{title_id}/out/{dst.name}",
+                "size": sz,
+                "sha256": sha,
+            })
+        else:
+            part_paths = []
+            with src_path.open("rb") as sf:
+                idx = 0
+                while True:
+                    chunk = sf.read(CHUNK_OUT)
+                    if not chunk:
+                        break
+                    pname = f"{src_path.name}.part{idx:03d}"
+                    (out_dir / pname).write_bytes(chunk)
+                    part_paths.append(f"hub_games/{title_id}/out/{pname}")
+                    idx += 1
+            manifest_files.append({
+                "fname": src_path.name,
+                "rel_path": target_rel,
+                "repo_path": part_paths[0],
+                "parts": part_paths,
+                "size": sz,
+                "sha256": sha,
+            })
 
     first = manifest_files[0]
     (out_dir / "latest.json").write_text(
@@ -1015,11 +1039,12 @@ def publish_multi_files(title_id: str, built_files: list[tuple[Path, str]], labe
     subprocess.run(["git", "config", "user.email", "bot@ps5arabi.local"], check=False)
     subprocess.run(["git", "add", str(out_dir), str(Path("hub_games") / title_id / "manifest.json")], check=False)
     subprocess.run(["git", "commit", "-m", f"publish {label} patch {title_id}"], check=False)
-    subprocess.run(["git", "push"], check=False)
+    subprocess.run(["git", "pull", "--rebase"], check=False)
+    subprocess.run(["git", "push"], check=True)
 
     for m in manifest_files:
         p = out_dir / m["fname"]
-        if p.stat().st_size < 45 * 1024 * 1024:
+        if p.exists() and p.stat().st_size < 45 * 1024 * 1024:
             tg_send_document(p, f"باتش {title_id} الجاهز ({m['fname']})")
 
 
@@ -1274,6 +1299,8 @@ def cmd_canary_test(title_id: str):
             master_en = extract_unity_universal(rf)
         elif rf.exists() and meta["fname"].lower().endswith(".locres"):
             _, master_en = parse_locres(rf.read_bytes())
+        elif rf.exists() and meta["fname"].lower().endswith(".json"):
+            master_en = flatten_json(json.loads(rf.read_text(encoding="utf-8")))
     if not master_en:
         tg_send_message(f"⚠️ استخرج نصوص {title_id} أولاً قبل تشغيل اختبار الـ 10 سطور.")
         return

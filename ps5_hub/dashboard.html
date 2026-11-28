@@ -500,13 +500,26 @@ async function doInstallLatest(){
       const basePct = 20 + (i / fileList.length) * 65;
       setProg(basePct, `تحميل ملف ${i+1}/${fileList.length}...`);
       log(`⏳ [${i+1}/${fileList.length}] تحميل ${item.fname} (${(item.size/(1024*1024)).toFixed(2)} م.ب)...`);
-      const fileInfo = await ghFetch(`/contents/${item.repo_path}`);
+      async function fetchRepoBytes(rp){
+        const fi = await ghFetch(`/contents/${rp}`);
+        if(fi.content) return b64ToBytes(fi.content);
+        const blob = await ghFetch(`/git/blobs/${fi.sha}`);
+        return b64ToBytes(blob.content);
+      }
       let pakBytes;
-      if(fileInfo.content){
-        pakBytes = b64ToBytes(fileInfo.content);
+      if(Array.isArray(item.parts) && item.parts.length){
+        const chunks = [];
+        let totalLen = 0;
+        for(let pi = 0; pi < item.parts.length; pi++){
+          log(`⬇️ تحميل جزء ${pi+1}/${item.parts.length} من ${item.fname}...`);
+          const c = await fetchRepoBytes(item.parts[pi]);
+          chunks.push(c); totalLen += c.length;
+        }
+        pakBytes = new Uint8Array(totalLen);
+        let off = 0;
+        for(const c of chunks){ pakBytes.set(c, off); off += c.length; }
       } else {
-        const blob = await ghFetch(`/git/blobs/${fileInfo.sha}`);
-        pakBytes = b64ToBytes(blob.content);
+        pakBytes = await fetchRepoBytes(item.repo_path);
       }
       const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURI(item.rel_path)}`, { method:'POST', body: pakBytes });
       const res = await ins.json();
