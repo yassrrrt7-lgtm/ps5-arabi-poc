@@ -62,7 +62,11 @@
     <details>
       <summary>🔧 سحب ملف محدد / إعدادات العرض اليدوية / AES</summary>
       <div style="margin-top:10px;">
-        <label>سحب ملف نصوص محدد من اللعبة (مثل ملف Unity .bundle):</label>
+        <label>اختر ملف النصوص مباشرة من القائمة (تتعبّى تلقائياً بعد الفحص):</label>
+        <select id="filePicker" onchange="if(this.value) document.getElementById('customRel').value=this.value;">
+          <option value="">-- اضغط "فحص اللعبة" لتعبئة الملفات تلقائياً --</option>
+        </select>
+        <label>أو اكتب المسار يدوياً:</label>
         <input id="customRel" type="text" placeholder="Media/StreamingAssets/aa/PS4/localization-string-tables-english(en)_assets_all.bundle">
         <button class="btn-scan" onclick="doPullSpecificFile()">📂 سحب هذا الملف وفك نصوصه للتلجرام</button>
 
@@ -191,6 +195,24 @@ async function doScan(){
     document.getElementById('vPatch').textContent = d.patch_installed ? 'مثبّت ✅' : 'لا يوجد';
     setProg(100, 'تم الفحص');
     log(`✅ تم اكتشاف ${d.title_id} | المحرك: ${d.engine} | الملفات: ${d.total_files || '?'}`, 'l-ok');
+    try {
+      const tr = await fetch('/api/file_tree');
+      if(tr.ok){
+        const txt = await tr.text();
+        const lines = txt.split(/\r?\n/).map(l => l.split('\t')[1]).filter(Boolean);
+        const kws = ['english','localization','locres','lang','string','text','subtit','dialog','.bundle','.json','.xml','.csv','.msg','.fmg'];
+        const hits = lines.filter(f => kws.some(k => f.toLowerCase().includes(k)));
+        const sel = document.getElementById('filePicker');
+        sel.innerHTML = '<option value="">-- اختر ملف النصوص (' + hits.length + ' ملف مرشّح) --</option>';
+        for(const f of hits.slice(0, 80)){
+          const opt = document.createElement('option');
+          opt.value = f; opt.textContent = f;
+          sel.appendChild(opt);
+        }
+        const eng = hits.find(f => f.toLowerCase().includes('english') && f.toLowerCase().includes('string'));
+        if(eng){ sel.value = eng; document.getElementById('customRel').value = eng; }
+      }
+    } catch(_){}
   }catch(e){ setProg(0,'فشل الفحص'); log('❌ ' + e.message, 'l-err'); }
 }
 
@@ -221,11 +243,11 @@ async function doPullSpecificFile(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
-    const rel = document.getElementById('customRel').value.trim();
-    if(!rel) throw new Error('الصق مسار الملف أولاً.');
+    const rel = document.getElementById('customRel').value.replace(/[^\x20-\x7E]/g, '').trim();
+    if(!rel) throw new Error('اختر ملفاً من القائمة أو الصق المسار أولاً.');
     setProg(25, 'سحب الملف من PS5...');
-    const r = await fetch(`/api/read_file?rel=${encodeURIComponent(rel)}`);
-    if(!r.ok) throw new Error('الملف غير موجود بهذا المسار على السوني.');
+    const r = await fetch(`/api/read_file?rel=${encodeURI(rel)}`);
+    if(!r.ok) throw new Error(`لم يُعثر على الملف (${r.status}): ${rel}`);
     const buf = await r.arrayBuffer();
     const fname = rel.split('/').pop();
     log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب). جاري فك نصوصه للتلجرام...`, 'l-ok');
