@@ -1,0 +1,22 @@
+{
+ "MB:-7847488348887111088:spriteInfoList[0].name": "Smiling face with smiling eyes",
+ "MB:-7847488348887111088:spriteInfoList[4].name": "Grinning face",
+ "MB:-7847488348887111088:spriteInfoList[6].name": "Face with tears of joy",
+ "MB:-7589225153947444879:m_defaultColorGradientPresetsPath": "Color Gradient Presets/",
+ "MB:-4130600004800662951:m_FaceInfo.m_FamilyName": "Liberation Sans",
+ "MB:-4130600004800662951:m_FaceInfo.m_StyleName": "Regular",
+ "MB:-4130600004800662951:m_fontInfo.Name": "Liberation Sans",
+ "MB:-2696240316367501734:m_StyleList[0].m_OpeningDefinition": "<size=2em><b><#40ff80>*",
+ "MB:-2696240316367501734:m_StyleList[1].m_OpeningDefinition": "<i><size=75%><margin=10%>",
+ "MB:-2696240316367501734:m_StyleList[2].m_OpeningDefinition": "<u><#40a0ff><link=\"ID_01\">",
+ "MB:-2696240316367501734:m_StyleList[3].m_OpeningDefinition": "<size=125%><b><align=center>",
+ "MB:-2696240316367501734:m_StyleList[4].m_OpeningDefinition": "<size=1.5em><b><#4080FF>",
+ "MB:-2696240316367501734:m_StyleList[5].m_OpeningDefinition": "<size=1.17em><b><#FF8040>",
+ "MB:-2696240316367501734:m_StyleList[6].m_OpeningDefinition": "<color=#ffff40>",
+ "MB:-2696240316367501734:m_StyleList[7].m_OpeningDefinition": "<color=#ff40FF><size=125%>",
+ "MB:-2696240316367501734:m_StyleList[8].m_OpeningDefinition": "<color=#80A0FF><b>",
+ "MB:3575842901958426556:m_defaultColorGradientPresetsPath": "Color Gradient Presets/",
+ "MB:8854149489604602138:m_FaceInfo.m_FamilyName": "Liberation Sans",
+ "MB:8854149489604602138:m_FaceInfo.m_StyleName": "Regular",
+ "MB:8854149489604602138:m_fontInfo.Name": "Liberation Sans"
+}
