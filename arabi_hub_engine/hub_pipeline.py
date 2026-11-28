@@ -284,15 +284,31 @@ def cmd_extract_texts(title_id: str):
 
 
 def publish_github_release(title_id: str, asset_path: Path, target_rel: str):
-    """Publish final patch to GitHub Releases (tag: patch-<TITLE_ID>) so Safari 1-tap Install grabs it."""
+    """Publish final patch to GitHub Releases + commit to repo (CORS-safe Git Blobs API for iPhone Safari) + Telegram."""
     tag = f"patch-{title_id}"
-    body = f"TARGET_REL={target_rel}\nBuilt automatically by PS5 Arabi Hub v3 Beast Engine."
+    body = f"TARGET_REL={target_rel}\nBuilt automatically by PS5 Arabi Hub v3.3."
     subprocess.run(["gh", "release", "delete", tag, "--yes"], check=False)
     subprocess.run(
         ["gh", "release", "create", tag, str(asset_path), "--title", f"PS5 Arabic Patch {title_id}", "--notes", body],
         check=True,
     )
-    print(f"Published GitHub Release {tag} -> {asset_path.name}", flush=True)
+    out_dir = Path("hub_games") / title_id / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dst = out_dir / asset_path.name
+    if dst.resolve() != asset_path.resolve():
+        shutil.copy2(asset_path, dst)
+    (out_dir / "latest.json").write_text(
+        json.dumps({"fname": asset_path.name, "rel_path": target_rel, "repo_path": f"hub_games/{title_id}/out/{asset_path.name}", "size": dst.stat().st_size}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "config", "user.name", "PS5 Arabi Bot"], check=False)
+    subprocess.run(["git", "config", "user.email", "bot@ps5arabi.local"], check=False)
+    subprocess.run(["git", "add", str(out_dir)], check=False)
+    subprocess.run(["git", "commit", "-m", f"publish patch {title_id}"], check=False)
+    subprocess.run(["git", "push"], check=False)
+    if dst.stat().st_size < 45 * 1024 * 1024:
+        tg_send_document(dst, f"باتش {title_id} الجاهز (نسخة احتياطية)")
+    print(f"Published {tag} + committed {dst} for Safari Blobs API", flush=True)
 
 
 def cmd_qa_and_build(title_id: str):

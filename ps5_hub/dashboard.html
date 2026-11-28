@@ -347,28 +347,37 @@ async function doSendBugPhoto(file){
   }catch(e){ setProg(0,'فشل إرسال الصورة'); log('❌ ' + e.message, 'l-err'); }
 }
 
+function b64ToBytes(b64){
+  const bin = atob(b64.replace(/\s/g, ''));
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
 async function doInstallLatest(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
     const tid = LAST_SCAN.title_id;
-    setProg(20, 'جلب آخر باتش جاهز...');
-    const rel = await ghFetch(`/releases/tags/patch-${tid}`);
-    const asset = (rel.assets || []).find(a => a.name.endsWith('.pak') || a.name.endsWith('.bundle') || a.name.endsWith('.json'));
-    if(!asset) throw new Error('لم يتم العثور على ملف الباتش في الإصدار بعد.');
-    log(`⏳ تحميل ${asset.name} (${(asset.size/(1024*1024)).toFixed(2)} م.ب)...`);
-    setProg(50, 'تحميل الباتش...');
-    const c = getCfg();
-    const dl = await fetch(asset.url, { headers:{'Authorization':'Bearer '+c.token, 'Accept':'application/octet-stream'} });
-    if(!dl.ok) throw new Error('فشل التحميل: ' + dl.status);
-    const pakBuf = await dl.arrayBuffer();
-    setProg(80, 'التثبيت على PS5...');
-    const relTarget = (rel.body && rel.body.startsWith('TARGET_REL=')) ? rel.body.slice(11).trim().split('\n')[0] : (LAST_SCAN.patch_rel || 'gameface/content/paks/pakchunk0-ps5_999_p.pak');
-    const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURIComponent(relTarget)}`, { method:'POST', body: pakBuf });
+    setProg(20, 'جلب بيانات آخر باتش جاهز...');
+    const metaResp = await ghFetch(`/contents/hub_games/${tid}/out/latest.json`);
+    const meta = JSON.parse(new TextDecoder().decode(b64ToBytes(metaResp.content)));
+    log(`⏳ [1/3] تحميل ${meta.fname} (${(meta.size/(1024*1024)).toFixed(2)} م.ب) عبر GitHub API...`);
+    setProg(50, 'جاري التحميل...');
+    const fileInfo = await ghFetch(`/contents/${meta.repo_path}`);
+    let pakBytes;
+    if(fileInfo.content){
+      pakBytes = b64ToBytes(fileInfo.content);
+    } else {
+      const blob = await ghFetch(`/git/blobs/${fileInfo.sha}`);
+      pakBytes = b64ToBytes(blob.content);
+    }
+    setProg(80, 'جاري إنشاء المجلدات والتثبيت على PS5...');
+    log(`⏳ [2/3] نسخ الباتش إلى ShadowMountPlus (${meta.rel_path})...`);
+    const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURI(meta.rel_path)}`, { method:'POST', body: pakBytes });
     const res = await ins.json();
     if(!res.ok) throw new Error(res.error || 'فشل التثبيت');
     setProg(100, 'تم التثبيت بنجاح!');
-    log(`✅ تم التثبيت (${res.bytes} بايت) في ${res.path}! أعد تشغيل اللعبة واستمتع.`, 'l-ok');
+    log(`✅ [3/3] تم التثبيت والتحقق (${res.bytes} بايت) في ${res.path}! أعد تشغيل اللعبة واستمتع.`, 'l-ok');
     document.getElementById('vPatch').textContent = 'مثبّت ✅';
   }catch(e){ setProg(0,'فشل التثبيت'); log('❌ ' + e.message, 'l-err'); }
 }
