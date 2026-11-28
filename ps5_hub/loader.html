@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PS5 Arabi Hub — جاري التحديث التلقائي...</title>
+<style>
+  body{margin:0;background:#0d1117;color:#e6edf3;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;}
+  .box{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:20px;max-width:420px;width:100%;}
+  .err{color:#f85149;margin-top:10px;font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="box">
+    <div style="font-size:22px;font-weight:700;margin-bottom:8px;">🎮 PS5 Arabi Hub</div>
+    <div id="msg">⏳ جاري تحميل أحدث نسخة من اللوحة تلقائياً من GitHub...</div>
+    <div id="err" class="err"></div>
+  </div>
+<script>
+(async function(){
+  const repo = (localStorage.getItem('ps5_arabi_repo') || 'yassrrrt7-lgtm/ps5-arabi-poc').trim();
+  const url = `https://raw.githubusercontent.com/${repo}/main/ps5_hub/dashboard.html?t=${Date.now()}`;
+  try {
+    const r = await fetch(url, {cache: 'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const html = await r.text();
+    localStorage.setItem('ps5_arabi_cached_ui', html);
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (e) {
+    const cached = localStorage.getItem('ps5_arabi_cached_ui');
+    if (cached) {
+      document.open();
+      document.write(cached);
+      document.close();
+    } else {
+      document.getElementById('msg').textContent = 'تعذّر تحميل اللوحة من GitHub';
+      document.getElementById('err').textContent = e.message + ' — تأكد أن الإنترنت شغّال على الآيفون ثم أعد تحميل الصفحة.';
+    }
+  }
+})();
+</script>
+</body>
+</html>
