@@ -48,11 +48,11 @@
 
   <div class="card">
     <details>
-      <summary>🤖 لصق كود إصلاح من الذكاء الاصطناعي (AI Doctor Fix)</summary>
+      <summary>🤖 دكتور التعريب (لصق مسارات الملفات أو كود الإصلاح من جميني)</summary>
       <div style="margin-top:10px;">
-        <label>الصق كود الإصلاح الذي أعطاك إياه جميني (JSON لإعدادات العرض أو كود Python):</label>
-        <textarea id="aiFixCode" placeholder='{"reshape":true,"bidi":true,"use_lro":true,"wrap_width":32,"skip_keys":[]}'></textarea>
-        <button class="btn-purple" onclick="doApplyAiFix()">🚀 تطبيق كود الإصلاح وإعادة بناء الباتش (20 ثانية)</button>
+        <label>الصق رد دكتور التعريب هنا (مسارات ملفات للسحب التلقائي، أو JSON إعدادات عرض، أو كود Python):</label>
+        <textarea id="aiFixCode" placeholder='مثال 1 (سحب ملفات): {"pull_files":["Media/StreamingAssets/aa/catalog.json"]}&#10;أو الصق مسار كل ملف في سطر&#10;مثال 2 (إصلاح عرض): {"reshape":true,"bidi":true,"use_lro":true,"wrap_width":32}'></textarea>
+        <button class="btn-purple" onclick="doApplyAiFix()">🚀 تنفيذ رد دكتور التعريب تلقائياً</button>
         <button class="btn-scan" style="margin:0" onclick="document.getElementById('bugImg').click()">📸 إرسال صورة المشكلة من التلفزيون للتلجرام</button>
         <input id="bugImg" type="file" accept="image/*" style="display:none" onchange="doSendBugPhoto(this.files[0])">
       </div>
@@ -213,7 +213,8 @@ async function doScan(){
         const hits = FILE_TREE_LINES.filter(f => kws.some(k => f.toLowerCase().includes(k)));
         const sel = document.getElementById('filePicker');
         sel.innerHTML = '<option value="">-- اختر ملف النصوص (' + hits.length + ' ملف مرشّح) --</option>';
-        for(const f of hits.slice(0, 100)){
+        hits.sort((a,b) => (b.toLowerCase().includes('catalog.json')||b.toLowerCase().includes('resources.assets')?1:0) - (a.toLowerCase().includes('catalog.json')||a.toLowerCase().includes('resources.assets')?1:0));
+        for(const f of hits.slice(0, 300)){
           const opt = document.createElement('option');
           opt.value = f; opt.textContent = f;
           sel.appendChild(opt);
@@ -318,22 +319,74 @@ async function doUploadTranslated(files){
   }catch(e){ setProg(0,'فشل الرفع'); log('❌ ' + e.message, 'l-err'); }
 }
 
+async function pullMultipleFiles(tid, paths){
+  const cleanPaths = paths.map(p => String(p).replace(/[^\x20-\x7E]/g, '').trim()).filter(Boolean);
+  if(!cleanPaths.length) throw new Error('لم يتم العثور على مسارات صالحة.');
+  let mainTarget = null;
+  for(let i = 0; i < cleanPaths.length; i++){
+    const rel = cleanPaths[i];
+    const fname = rel.split('/').pop();
+    setProg(15 + (i / cleanPaths.length) * 65, `سحب ${fname}...`);
+    log(`⏳ [${i+1}/${cleanPaths.length}] سحب ${rel}...`);
+    const r = await fetch(`/api/read_file?rel=${encodeURI(rel)}`);
+    if(!r.ok){ log(`⚠️ تعذر سحب ${rel} (${r.status})`, 'l-warn'); continue; }
+    const buf = await r.arrayBuffer();
+    await ghPutFile(`hub_games/${tid}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+    const low = fname.toLowerCase();
+    if(low === 'catalog.json' && cleanPaths.length > 1){
+      await ghPutFile(`hub_games/${tid}/catalog_file.json`, strToB64(JSON.stringify({rel, fname})), `catalog meta`);
+    } else if(low.includes('font') && cleanPaths.length > 1){
+      await ghPutFile(`hub_games/${tid}/font_file.json`, strToB64(JSON.stringify({rel, fname})), `font meta`);
+    } else if(!mainTarget){
+      mainTarget = {rel, fname};
+      await ghPutFile(`hub_games/${tid}/target_file.json`, strToB64(JSON.stringify(mainTarget)), `target ${fname}`);
+    }
+    log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب)`, 'l-ok');
+  }
+  if(!mainTarget){
+    const rel = cleanPaths[0], fname = rel.split('/').pop();
+    await ghPutFile(`hub_games/${tid}/target_file.json`, strToB64(JSON.stringify({rel, fname})), `target ${fname}`);
+  }
+  setProg(90, 'تشغيل السحابة...');
+  await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ref:'main', inputs:{action:'extract_texts', title_id:tid}})
+  });
+  setProg(100, 'تم السحب وإرسال النتيجة للتلجرام!');
+  log('✅ تم سحب جميع الملفات! خلال 30 ثانية بتوصلك النتيجة في التلجرام.', 'l-ok');
+}
+
 async function doApplyAiFix(){
   try{
     if(!LAST_SCAN) await doScan();
     const tid = LAST_SCAN ? LAST_SCAN.title_id : prompt('أدخل Title ID اللعبة:');
     if(!tid) return;
-    const raw = document.getElementById('aiFixCode').value.trim();
-    if(!raw) throw new Error('الصق كود الإصلاح من جميني في المربع أولاً.');
-    setProg(40, 'تطبيق كود الإصلاح...');
+    let raw = document.getElementById('aiFixCode').value.trim();
+    raw = raw.replace(/^```[a-zA-Z]*\s*/,'').replace(/```$/,'').trim();
+    if(!raw) throw new Error('الصق رد دكتور التعريب في المربع أولاً.');
+    setProg(25, 'تحليل رد دكتور التعريب...');
+
     if(raw.startsWith('{')){
-      JSON.parse(raw);
-      await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(raw), `ai json fix ${tid}`);
+      const obj = JSON.parse(raw);
+      if(Array.isArray(obj.pull_files) && obj.pull_files.length){
+        await pullMultipleFiles(tid, obj.pull_files);
+        return;
+      }
+      await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(JSON.stringify(obj, null, 2)), `ai json fix ${tid}`);
       log('✅ تم حفظ إعدادات الإصلاح (JSON) في السحابة.', 'l-ok');
-    } else {
+    } else if(raw.includes('def transform_text') || raw.includes('import ')){
       await ghPutFile(`hub_games/${tid}/custom_fix.py`, strToB64(raw), `ai python fix ${tid}`);
       log('✅ تم حفظ كود الإصلاح (custom_fix.py) في السحابة.', 'l-ok');
+    } else {
+      // Plain file paths (one per line) from AI Doctor!
+      const paths = raw.split(/\r?\n/).map(s => s.replace(/^[-•*\s]+/,'').trim()).filter(s => s.includes('/') || s.includes('.'));
+      if(paths.length){
+        await pullMultipleFiles(tid, paths);
+        return;
+      }
+      throw new Error('لم يتم التعرف على الصيغة — الصق مسار ملف أو JSON أو كود Python.');
     }
+
     setProg(75, 'إعادة بناء الباتش (20 ثانية)...');
     await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
       method:'POST', headers:{'Content-Type':'application/json'},

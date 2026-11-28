@@ -41,13 +41,58 @@ TAG_STRIP_RE = re.compile(r"~[^~\r\n]+~|<[^>]+>")
 
 LOCRES_MAGIC = bytes([0x0E, 0x14, 0x74, 0x75, 0x67, 0x4A, 0x03, 0xFC, 0x4A, 0x15, 0x90, 0x9D, 0xC3, 0x37, 0x7F, 0x1B])
 
-GEMINI_MASTER_PROMPT = """أنت مترجم ألعاب محترف متخصص في تعريب ألعاب PlayStation إلى العربية الفصحى الطبيعية السلسة (وفق منهجية عبدالله السبيعي الاحترافية).
-المطلوب: ترجم قيم JSON التالية إلى العربية مع الالتزام الصارم بجميع القواعد:
-1. أرجع ملف JSON صالح 100% بنفس المفاتيح بالضبط (لا تغيّر ولا تحذف أي مفتاح).
-2. حافظ على جميع الرموز والمتغيرات والألوان والأزرار كما هي حرفياً دون ترجمة أو تعديل أو حذف أقواس: مثل ~b~ و ~s~ و ~n~ و %s و %d و {0} و <tag> و [BTN].
-3. ترجم بأسلوب حوارات ألعاب طبيعي وممتع يناسب السياق، وتجنب الترجمة الحرفية (أسماء الشخصيات والأماكن تُعرّب صوتياً).
-4. لا تترك أي جملة إنجليزية بدون ترجمة إلا الأسماء التقنية أو المفاتيح البرمجية.
-5. لا تستخدم كيانات HTML مثل &quot; — استخدم علامات التنصيص العادية.
+GEMINI_MASTER_PROMPT = """أنت كبير معرّبي ألعاب فيديو محترف (بمستوى استوديوهات التعريب الرسمية ومنهجية عبدالله السبيعي).
+مهمتك: ترجمة ملف JSON المرفق للعبة PlayStation إلى عربية فصحى سلسة وحيّة تبدو كأنها تعريب رسمي من الشركة المطوّرة، مع الالتزام الصارم بجميع القواعد التالية دون أي استثناء:
+
+[أولاً — جودة الأسلوب ومعجم القوائم الموحّد]
+1. أسلوب طبيعي 100%: ترجم المعنى والروح والانفعال لا الحرف. ابتعد تماماً عن الترجمة الحرفية الجامدة أو ركاكة الترجمة الآلية.
+2. اختصار القوائم والأزرار (UI): النصوص القصيرة (كلمة إلى 3 كلمات مثل أسماء الأزرار والقوائم) يجب أن تبقى قصيرة ومباشرة لتناسب مربعات الواجهة دون خروج عن الإطار.
+3. توحيد المصطلحات عبر جميع أجزاء اللعبة:
+   • Settings/Options = الإعدادات | Controls = التحكم | Audio/Sound = الصوت | Graphics/Display = العرض
+   • Play/Start = ابدأ | Continue = متابعة | Resume = استئناف | Pause = إيقاف مؤقت | Retry/Restart = إعادة المحاولة
+   • Back = رجوع | Cancel = إلغاء | Confirm/Apply = تأكيد | Save = حفظ | Load = تحميل | Quit/Exit = خروج
+   • Score = النقاط | High Score = أعلى نتيجة | Level/Stage = المرحلة | Tutorial = التعليمات | Leaderboard = لوحة الصدارة
+   • Player = اللاعب | Victory/Win = فوز | Game Over = انتهت اللعبة | Loading = جاري التحميل...
+4. أسماء الشخصيات والعلامات التجارية والأماكن الشهيرة: تُعرّب صوتياً بأسلوب طبيعي (أو تُبقى كما هي إذا كانت أسماء ألعاب كلاسيكية معروفة).
+
+[ثانياً — قواعد السلامة الصارمة ضد الكراش (Zero-Crash Rules)]
+5. أرجع ملف JSON صالح 100% فقط (بدون أي شرح قبله أو بعده، وبدون علامات ``` إذا أمكن) وبنفس المفاتيح (Keys) حرفياً دون تغيير أو حذف أو إضافة أي مفتاح.
+6. حافظ على جميع المتغيرات والرموز البرمجية والألوان والأزرار حرفياً بنفس العدد والنوع والمكان المنطقي، ولا تترجمها أبداً:
+   مثل: %s و %d و %i و %f و %.1f و {0} و {1} و {name} و ~b~ و ~s~ و ~n~ و <color=#...> و </color> و <b> و \n و [BTN].
+7. لا تستخدم كيانات HTML مثل &quot; أو &amp; — استخدم علامات التنصيص العادية (مع الهروب \" داخل JSON عند الحاجة).
+8. أي قيمة عبارة عن مسار ملف أو كود برمجي أو معرّف داخلي (مثل UI_Btn_01 أو Assets/...) اتركها كما هي دون ترجمة.
+9. لا تترك أي جملة إنجليزية قابلة للترجمة بدون تعريب، وراجع كل سطر قبل التسليم للتأكد من صحة أقواس JSON وعلامات الفاصلة.
+"""
+
+AI_DOCTOR_MASTER_PROMPT = """أنت (دكتور التعريب — PS5 Arabi AI Doctor)، خبير هندسة عكسية وتعريب ألعاب PS4/PS5 على نظام PS5 Arabi Hub.
+مهمتك مساعدة المستخدم بخطوة واحدة مباشرة حسب ما يرسله لك، ودائماً ترد بـ **كود واحد جاهز للصق مباشرة داخل مربع (🤖 دكتور التعريب) في لوحة Safari** بدون كلام طويل:
+
+[الحالة 1 — إذا أرسل لك المستخدم شجرة ملفات اللعبة (file_tree.txt) أو فهرس (catalog.json)]
+• حلّل الشجرة وحدّد بدقة:
+  1) ملف/ملفات النصوص الإنجليزية (مثل .locres أو localization*.bundle أو strings*.json أو resources.assets).
+  2) ملف الفهرس إن وجد (مثل Media/StreamingAssets/aa/catalog.json) لتعطيل فحص CRC.
+  3) ملف الخطوط إن وُجد بشكل واضح.
+• أرجع له الرد بهذه الصيغة الحرفية فقط ليلصقها في مربع (🤖 دكتور التعريب) فتُنسخ وتُسحب تلقائياً بضغطة واحدة:
+{"pull_files": ["المسار/الأول/بالضبط", "المسار/الثاني/بالضبط"]}
+• إذا كانت أسماء ملفات Unity مشفّرة برموز عشوائية (Hash مثل 0562158...bundle)، اطلب منه سحب catalog.json أولاً عبر:
+{"pull_files": ["Media/StreamingAssets/aa/catalog.json"]}
+
+[الحالة 2 — إذا أرسل لك صورة من التلفزيون فيها مشكلة عرض بالعربي]
+شخّص المشكلة وأرجع له كود JSON جاهز للصق في مربع (🤖 دكتور التعريب):
+• حروف مقطّعة أو غير متصلة -> {"reshape":true,"bidi":true,"use_lro":true,"wrap_width":32,"skip_keys":[]}
+• كلمات معكوسة (عكس مزدوج) -> {"reshape":true,"bidi":true,"use_lro":true,"wrap_width":32,"skip_keys":[]} (أو جرّب "bidi":false إذا المحرك يدعم RTL أصلاً).
+• نص يخرج من المربع أو مقصوص -> قلّل "wrap_width" إلى 24 أو 28.
+• مربعات □□□ مكان الحروف -> يعني خط اللعبة لا يدعم العربي؛ اطلب منه سحب ملف الخط أو حدّده له بـ {"pull_files":[...]}.
+• قوائم معينة بخط إنجليزي مرسوم (Bitmap) -> أضف مفاتيحها داخل "skip_keys".
+
+[الحالة 3 — إذا كانت المشكلة تحتاج معالجة نصية خاصة (مثل رموز ألوان غريبة أو فصل أسطر خاص)]
+اكتب له كود Python نظيف يحتوي على دالة:
+def transform_text(ar_text, orig_en, key, cfg):
+    ...
+    return ar_text
+ليلصقه مباشرة في نفس مربع (🤖 دكتور التعريب) في Safari.
+
+قاعدة ذهبية: لا تطلب من المستخدم تعديل أي ملف يدوياً ولا تطلب منه تحديث البيلود؛ كل شيء يُلصق في مربع (🤖 دكتور التعريب) بضغطة زر واحدة.
 """
 
 
@@ -351,6 +396,86 @@ def rebuild_locres(orig_data: bytes, translations: dict[str, str], cfg: dict, cu
 
 # ─────────────────────────── Unity Addressables catalog.json CRC Patcher ───────────────────────────
 
+
+def decode_unity_addressables_catalog(raw_catalog: Path) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """
+    Decodes Unity Addressables catalog.json (m_InternalIds + m_EntryDataString + m_BucketDataString)
+    to map human-readable Localization/Text assets and Font assets to their exact hashed .bundle files!
+    Returns (text_matches, font_matches) where each item is (bundle_rel_path, asset_name).
+    """
+    import base64
+    cat = json.loads(raw_catalog.read_text(encoding="utf-8"))
+    iids = cat.get("m_InternalIds") or []
+    ed_b64 = cat.get("m_EntryDataString") or ""
+    bd_b64 = cat.get("m_BucketDataString") or ""
+    if not iids or not ed_b64 or not bd_b64:
+        return [], []
+
+    ed = base64.b64decode(ed_b64)
+    bd = base64.b64decode(bd_b64)
+
+    (entry_cnt,) = struct.unpack_from("<I", ed, 0)
+    entries = []
+    off = 4
+    for _ in range(entry_cnt):
+        if off + 28 > len(ed):
+            break
+        entries.append(struct.unpack_from("<7i", ed, off))
+        off += 28
+
+    (bucket_cnt,) = struct.unpack_from("<I", bd, 0)
+    buckets = []
+    off = 4
+    for _ in range(bucket_cnt):
+        if off + 8 > len(bd):
+            break
+        _data_off, cnt = struct.unpack_from("<ii", bd, off)
+        off += 8
+        idxs = list(struct.unpack_from(f"<{cnt}i", bd, off)) if cnt > 0 and off + 4 * cnt <= len(bd) else []
+        off += 4 * cnt
+        buckets.append(idxs)
+
+    def resolve_bundle(dep_idx: int) -> str:
+        if 0 <= dep_idx < len(buckets):
+            for be_i in buckets[dep_idx]:
+                if 0 <= be_i < len(entries):
+                    iid_i = entries[be_i][0]
+                    if 0 <= iid_i < len(iids) and iids[iid_i].lower().endswith(".bundle"):
+                        b = iids[iid_i]
+                        if "/PS5/" in b:
+                            return "Media/StreamingAssets/aa/PS5/" + b.split("/PS5/")[-1]
+                        if "/PS4/" in b:
+                            return "Media/StreamingAssets/aa/PS4/" + b.split("/PS4/")[-1]
+                        return b
+        return ""
+
+    text_kws = ("localiz", "lang", "english", "string", "text", "subtit", "dialog", "i2loc", "csv", "json", "xml", "tradu", "loc_")
+    font_kws = ("/font/", ".ttf", ".otf", "sdf.asset")
+    text_hits, font_hits = [], []
+    seen_t, seen_f = set(), set()
+
+    for e in entries:
+        iid_i, _prov, dep_i = e[0], e[1], e[2]
+        if not (0 <= iid_i < len(iids)):
+            continue
+        asset = iids[iid_i]
+        low = asset.lower()
+        if low.endswith(".bundle"):
+            continue
+        if any(k in low for k in text_kws) and not low.endswith((".png", ".wav", ".ogg", ".mp3", ".mat", ".fbx", ".prefab", ".shadergraph")):
+            bpath = resolve_bundle(dep_i)
+            if bpath and (bpath, asset) not in seen_t:
+                seen_t.add((bpath, asset))
+                text_hits.append((bpath, asset))
+        elif any(k in low for k in font_kws) and not low.endswith(".mat"):
+            bpath = resolve_bundle(dep_i)
+            if bpath and (bpath, asset) not in seen_f:
+                seen_f.add((bpath, asset))
+                font_hits.append((bpath, asset))
+
+    return text_hits, font_hits
+
+
 def patch_unity_catalog_json(raw_catalog: Path, out_catalog: Path) -> bool:
     """Disables CRC mismatch rejection in Unity Addressables catalog.json so patched .bundle files ALWAYS load."""
     try:
@@ -487,7 +612,10 @@ def cmd_analyze(title_id: str):
     tg_send_message(msg)
     if tree_path.exists():
         tg_send_document(tree_path, f"شجرة ملفات {title_id}")
-    tg_send_document(prompt_file, "الأمر الاحترافي لجميني")
+    doctor_file = gdir / "PROMPT_AI_DOCTOR.txt"
+    doctor_file.write_text(AI_DOCTOR_MASTER_PROMPT, encoding="utf-8")
+    tg_send_document(prompt_file, "الأمر الاحترافي الشامل لترجمة الملفات (أرسله مع كل ملف JSON لجميني)")
+    tg_send_document(doctor_file, "الأمر الشامل لدكتور التعريب (أرسله مع شجرة الملفات أو صور المشاكل)")
 
 
 def cmd_extract_texts(title_id: str):
@@ -523,6 +651,31 @@ def cmd_extract_texts(title_id: str):
                     pass
     elif fname_low.endswith(".locres"):
         _, strings_map = parse_locres(raw_file.read_bytes())
+    elif fname_low == "catalog.json":
+        text_hits, font_hits = decode_unity_addressables_catalog(raw_file)
+        lines = [f"🔍 تم فك فهرس Unity Addressables للعبة {title_id} تلقائياً!"]
+        if text_hits:
+            lines.append("\n📝 ملفات النصوص المكتشفة (انسخ مسار الـ .bundle في Safari واسحبه):")
+            seen_b = []
+            for b, a in text_hits:
+                if b not in seen_b:
+                    seen_b.append(b)
+                    lines.append(f"• {b}\n   ↳ ({a})")
+                if len(seen_b) >= 12:
+                    break
+        else:
+            lines.append("\n⚠️ لم يُعثر على ملف نصوص واضح داخل catalog.json — جرّب سحب Media/resources.assets!")
+        if font_hits:
+            lines.append("\n🔤 أبرز ملفات الخطوط (.bundle):")
+            seen_fb = []
+            for b, a in font_hits:
+                if b not in seen_fb:
+                    seen_fb.append(b)
+                    lines.append(f"• {b}\n   ↳ ({a})")
+                if len(seen_fb) >= 6:
+                    break
+        tg_send_message("\n".join(lines))
+        return
     elif fname_low.endswith(".json"):
         data = json.loads(raw_file.read_text(encoding="utf-8"))
         strings_map = flatten_json(data)
