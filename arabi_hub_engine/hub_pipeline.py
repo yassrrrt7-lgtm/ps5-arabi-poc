@@ -1037,7 +1037,7 @@ def publish_multi_files(title_id: str, built_files: list[tuple[Path, str]], labe
     subprocess.run(["gh", "release", "create", tag, *release_assets, "--title", f"PS5 Arabic Patch {title_id} ({label})", "--notes", "Built by PS5 Arabi Hub v7 Omniverse"], check=False)
     subprocess.run(["git", "config", "user.name", "PS5 Arabi Bot"], check=False)
     subprocess.run(["git", "config", "user.email", "bot@ps5arabi.local"], check=False)
-    subprocess.run(["git", "add", str(out_dir), str(Path("hub_games") / title_id / "manifest.json")], check=False)
+    subprocess.run(["git", "add", str(out_dir)], check=True)
     subprocess.run(["git", "commit", "-m", f"publish {label} patch {title_id}"], check=False)
     subprocess.run(["git", "pull", "--rebase"], check=False)
     subprocess.run(["git", "push"], check=True)
