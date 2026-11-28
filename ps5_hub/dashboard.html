@@ -28,7 +28,7 @@
 </style>
 </head>
 <body>
-  <h1><span>🎮 PS5 Arabi Hub</span><span class="badge">v5 الشاملة</span></h1>
+  <h1><span>🎮 PS5 Arabi Hub</span><span class="badge">v7 النهائية</span></h1>
   <div class="sub">PS4 + PS5 بكل الصيغ (FPKG + ShadowMountPlus) — خطوط تلقائية وحماية ضد الكراش</div>
 
   <div class="card">
@@ -41,8 +41,9 @@
 
   <button class="btn-scan" onclick="doScan()">🔍 فحص اللعبة الشغّالة الآن</button>
   <button class="btn-green" onclick="doExtractAndSend()">📤 1. استخراج وإرسال النصوص للتلجرام</button>
+  <button class="btn-purple" onclick="doCanaryTest()">🧪 اختبار عرض سريع (10 سطور قبل الترجمة)</button>
   <button class="btn-amber" onclick="document.getElementById('arFiles').click()">☁️ 2. رفع ملفات الترجمة من جميني وبناء الباتش</button>
-  <input id="arFiles" type="file" multiple accept=".json,.py" style="display:none" onchange="doUploadTranslated(this.files)">
+  <input id="arFiles" type="file" multiple accept=".json,.py,.ttf,.otf" style="display:none" onchange="doUploadTranslated(this.files)">
   <button class="btn-blue" onclick="doInstallLatest()">📥 3. تثبيت وتفعيل آخر تعريب جاهز على السوني</button>
   <button class="btn-red" onclick="doUninstall()">🗑️ إزالة التعريب واسترجاع اللعبة أصلية</button>
 
@@ -240,6 +241,20 @@ async function doExtractAndSend(){
     await ghPutFile(`hub_games/${LAST_SCAN.title_id}/scan.json`, strToB64(JSON.stringify(LAST_SCAN,null,2)), `scan ${LAST_SCAN.title_id}`);
     await ghPutFile(`hub_games/${LAST_SCAN.title_id}/render_config.json`, strToB64(JSON.stringify(getRenderConfig(),null,2)), `cfg ${LAST_SCAN.title_id}`);
     await ghPutFile(`hub_games/${LAST_SCAN.title_id}/extracted.arabi`, bufToBase64(buf), `extract ${LAST_SCAN.title_id}`);
+    // Auto-extract for Unity games in 1 tap!
+    if(LAST_SCAN.engine === 'Unity' && FILE_TREE_LINES.length){
+      const engBundle = FILE_TREE_LINES.find(f => f.toLowerCase().includes('english') && f.toLowerCase().endsWith('.bundle'));
+      const catJson = FILE_TREE_LINES.find(f => f.toLowerCase().endsWith('catalog.json'));
+      if(engBundle){
+        log(`🎯 تم اكتشاف ملف النصوص تلقائياً: ${engBundle}`, 'l-ok');
+        await pullMultipleFiles(LAST_SCAN.title_id, catJson ? [engBundle, catJson] : [engBundle]);
+        return;
+      } else if(catJson){
+        log(`🔍 أسماء الملفات مشفّرة برموز — جاري فك catalog.json تلقائياً...`, 'l-info');
+        await pullMultipleFiles(LAST_SCAN.title_id, [catJson]);
+        return;
+      }
+    }
     await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ref:'main', inputs:{action:'analyze_and_send', title_id:LAST_SCAN.title_id}})
@@ -294,6 +309,23 @@ async function doPullSpecificFile(){
   }catch(e){ setProg(0,'فشل السحب'); log('❌ ' + e.message, 'l-err'); }
 }
 
+
+async function doCanaryTest(){
+  try{
+    if(!LAST_SCAN) await doScan();
+    if(!LAST_SCAN) return;
+    const tid = LAST_SCAN.title_id;
+    setProg(40, 'بناء اختبار الـ 10 سطور...');
+    await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(JSON.stringify(getRenderConfig(),null,2)), `canary cfg ${tid}`);
+    await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ref:'main', inputs:{action:'canary_test', title_id:tid}})
+    });
+    setProg(100, 'جاري بناء اختبار العرض السريع!');
+    log('🧪 بدأ بناء باتش الاختبار السريع (10 سطور عربية)! خلال 25 ثانية اضغط (📥 3. تثبيت) وتأكد من الخط والاتجاه قبل ما تترجم اللعبة كاملة.', 'l-ok');
+  }catch(e){ setProg(0,'فشل الاختبار'); log('❌ ' + e.message, 'l-err'); }
+}
+
 async function doUploadTranslated(files){
   try{
     if(!files || !files.length) return;
@@ -305,7 +337,7 @@ async function doUploadTranslated(files){
       i++;
       setProg((i / (files.length + 1)) * 80, `رفع ${f.name}...`);
       const buf = await f.arrayBuffer();
-      const dst = f.name.endsWith('.py') ? `hub_games/${tid}/${f.name}` : `hub_games/${tid}/translated/${f.name}`;
+      const dst = f.name.endsWith('.py') ? `hub_games/${tid}/${f.name}` : (f.name.toLowerCase().endsWith('.ttf') || f.name.toLowerCase().endsWith('.otf') ? `hub_games/${tid}/fonts/${f.name}` : `hub_games/${tid}/translated/${f.name}`);
       await ghPutFile(dst, bufToBase64(buf), `upload ${f.name}`);
       log(`✅ تم رفع ${f.name}`, 'l-ok');
     }
@@ -492,7 +524,7 @@ async function doUninstall(){
 }
 
 loadCfgUI();
-log('جاهز (النسخة الشاملة v5) — اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
+log('جاهز (النسخة النهائية الشاملة v7) — اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
 </script>
 </body>
 </html>

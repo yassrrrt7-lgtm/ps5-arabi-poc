@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "analyze_and_send | extract_texts | qa_and_build | send_bug_photo"
+        description: "analyze_and_send | extract_texts | canary_test | qa_and_build | send_bug_photo"
         required: true
         type: choice
         options:
           - analyze_and_send
           - extract_texts
+          - canary_test
           - qa_and_build
           - send_bug_photo
       title_id:
@@ -30,25 +31,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Universal Cloud Engine Tools (UnityPy + Arabic)
+      - name: Install Universal Cloud Engine Libraries (UnityPy + Arabic)
         run: |
           python3 -m pip install --upgrade pip
           pip install requests arabic-reshaper python-bidi UnityPy
 
-      - name: Install Optional repak CLI (Unreal 4/5)
+      - name: Install Optional Unreal 4/5 Tools (repak + retoc IoStore)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPAK_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/trumank/repak/releases/latest \
-            | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); print(next((a['browser_download_url'] for a in assets if 'x86_64-unknown-linux' in a['name'] and a['name'].endswith('.tar.xz')), ''))" || true)
-          if [ -n "$REPAK_URL" ]; then
-            curl -sL "$REPAK_URL" -o /tmp/repak.tar.xz
-            tar -xJf /tmp/repak.tar.xz -C /tmp
-            find /tmp -name repak -type f -exec sudo install -m 755 {} /usr/local/bin/repak \;
-          fi
+          for repo in trumank/repak trumank/retoc; do
+            BIN=$(basename "$repo")
+            URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo/releases/latest" \
+              | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); print(next((a['browser_download_url'] for a in assets if 'x86_64-unknown-linux' in a['name'] and a['name'].endswith('.tar.xz')), ''))" || true)
+            if [ -n "$URL" ]; then
+              curl -sL "$URL" -o "/tmp/$BIN.tar.xz"
+              tar -xJf "/tmp/$BIN.tar.xz" -C /tmp || true
+              find /tmp -name "$BIN" -type f -exec sudo install -m 755 {} "/usr/local/bin/$BIN" \; || true
+            fi
+          done
 
-      - name: Run PS5 Arabi Hub v5 Ultimate Universal Engine
+      - name: Run PS5 Arabi Hub v7 Omniverse Engine
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
