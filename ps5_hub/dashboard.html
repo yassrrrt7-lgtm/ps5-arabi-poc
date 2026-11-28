@@ -3,48 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>PS5 Arabi Hub</title>
+<title>PS5 Arabi Hub — Final Beast Edition</title>
 <style>
-  :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--txt:#e6edf3;--muted:#8b949e;--green:#238636;--blue:#1f6feb;--red:#da3633;--amber:#d29922;}
+  :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--txt:#e6edf3;--muted:#8b949e;--green:#238636;--blue:#1f6feb;--red:#da3633;--amber:#9e6a03;--purple:#8957e5;}
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
   body{margin:0;background:var(--bg);color:var(--txt);padding:14px;max-width:560px;margin:0 auto;}
-  h1{font-size:20px;margin:0 0 4px;display:flex;align-items:center;justify-content:space-between;}
-  .sub{font-size:12px;color:var(--muted);margin-bottom:14px;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:14px;border-bottom:1px solid #21262d;}
+  h1{font-size:19px;margin:0 0 4px;display:flex;align-items:center;justify-content:space-between;}
+  .sub{font-size:12px;color:var(--muted);margin-bottom:12px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;margin-bottom:11px;}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13.5px;border-bottom:1px solid #21262d;}
   .row:last-child{border-bottom:none;}
-  .badge{padding:3px 8px;border-radius:99px;font-size:12px;font-weight:700;background:#21262d;}
-  .ok{background:#122d1b;color:#3fb950;} .warn{background:#2d2208;color:#e3b341;} .err{background:#341215;color:#f85149;}
-  button{width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:700;color:#fff;cursor:pointer;margin-bottom:9px;display:flex;align-items:center;justify-content:center;gap:8px;}
-  button:disabled{opacity:.45;cursor:not-allowed;}
-  .btn-scan{background:#30363d;} .btn-green{background:var(--green);} .btn-blue{background:var(--blue);} .btn-amber{background:#9e6a03;} .btn-red{background:var(--red);}
-  .prog-wrap{background:#21262d;border-radius:99px;height:10px;overflow:hidden;margin:10px 0 6px;}
+  .badge{padding:3px 8px;border-radius:99px;font-size:11.5px;font-weight:700;background:#122d1b;color:#3fb950;}
+  button{width:100%;padding:13px;border:none;border-radius:11px;font-size:14.5px;font-weight:700;color:#fff;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn-scan{background:#30363d;} .btn-green{background:var(--green);} .btn-blue{background:var(--blue);} .btn-amber{background:var(--amber);} .btn-purple{background:var(--purple);} .btn-red{background:var(--red);}
+  .prog-wrap{background:#21262d;border-radius:99px;height:10px;overflow:hidden;margin:9px 0 6px;}
   .prog-bar{height:100%;width:0%;background:linear-gradient(90deg,#1f6feb,#3fb950);transition:width .25s;}
-  .log{background:#010409;border:1px solid var(--border);border-radius:10px;padding:10px;height:210px;overflow-y:auto;font-size:12.5px;line-height:1.65;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;}
+  .log{background:#010409;border:1px solid var(--border);border-radius:10px;padding:10px;height:185px;overflow-y:auto;font-size:12px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;}
   .l-ok{color:#3fb950;} .l-err{color:#f85149;} .l-info{color:#58a6ff;} .l-warn{color:#e3b341;}
-  details summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--muted);}
-  input[type=text],input[type=password]{width:100%;padding:10px;margin:6px 0 10px;border-radius:8px;border:1px solid var(--border);background:#0d1117;color:var(--txt);font-size:13px;direction:ltr;}
-  input[type=file]{width:100%;padding:8px;margin:6px 0;color:var(--txt);font-size:13px;}
+  details summary{cursor:pointer;font-weight:700;font-size:13.5px;color:#c9d1d9;}
+  input[type=text],input[type=password],select,textarea{width:100%;padding:9px;margin:5px 0 9px;border-radius:8px;border:1px solid var(--border);background:#0d1117;color:var(--txt);font-size:12.5px;direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  textarea{min-height:110px;resize:vertical;}
+  .chk{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #21262d;}
   label{font-size:12px;color:var(--muted);}
 </style>
 </head>
 <body>
-  <h1><span>🎮 PS5 Arabi Hub</span><span id="connBadge" class="badge ok">متصل بـ PS5</span></h1>
-  <div class="sub">لوحة التعريب الأوتوماتيكي — كل خطوة تظهر قدامك حرفياً</div>
+  <h1><span>🎮 PS5 Arabi Hub</span><span class="badge">النسخة النهائية</span></h1>
+  <div class="sub">التعريب الأوتوماتيكي الشامل — كل خطوة تظهر قدامك حرفياً</div>
 
   <div class="card">
     <div class="row"><span>اللعبة الشغّالة (Title ID)</span><strong id="vTitle">لم يتم الفحص بعد</strong></div>
     <div class="row"><span>المحرك المكتشف</span><strong id="vEngine">—</strong></div>
-    <div class="row"><span>حالة التشفير / الأرشيف</span><strong id="vEnc">—</strong></div>
+    <div class="row"><span>حالة التشفير</span><strong id="vEnc">—</strong></div>
     <div class="row"><span>تعريب مثبّت حالياً</span><strong id="vPatch">—</strong></div>
   </div>
 
   <button class="btn-scan" onclick="doScan()">🔍 فحص اللعبة الشغّالة الآن</button>
-  <button class="btn-green" id="btnExtract" onclick="doExtractAndSend()">📤 1. استخراج وإرسال النصوص للتلجرام</button>
+  <button class="btn-green" onclick="doExtractAndSend()">📤 1. استخراج وإرسال النصوص للتلجرام</button>
   <button class="btn-amber" onclick="document.getElementById('arFiles').click()">☁️ 2. رفع ملفات الترجمة من جميني وبناء الباتش</button>
-  <input id="arFiles" type="file" multiple accept=".json" style="display:none" onchange="doUploadTranslated(this.files)">
-  <button class="btn-blue" id="btnInstall" onclick="doInstallLatest()">📥 3. تثبيت آخر تعريب جاهز على السوني</button>
+  <input id="arFiles" type="file" multiple accept=".json,.py" style="display:none" onchange="doUploadTranslated(this.files)">
+  <button class="btn-blue" onclick="doInstallLatest()">📥 3. تثبيت آخر تعريب جاهز على السوني</button>
   <button class="btn-red" onclick="doUninstall()">🗑️ إزالة التعريب واسترجاع اللعبة أصلية</button>
+
+  <div class="card">
+    <details>
+      <summary>🤖 لصق كود إصلاح من الذكاء الاصطناعي (AI Doctor Fix)</summary>
+      <div style="margin-top:10px;">
+        <label>الصق كود الإصلاح الذي أعطاك إياه جميني (JSON لإعدادات العرض أو كود Python):</label>
+        <textarea id="aiFixCode" placeholder='{"reshape":true,"bidi":true,"use_lro":true,"wrap_width":32,"skip_keys":[]}'></textarea>
+        <button class="btn-purple" onclick="doApplyAiFix()">🚀 تطبيق كود الإصلاح وإعادة بناء الباتش (20 ثانية)</button>
+        <button class="btn-scan" style="margin:0" onclick="document.getElementById('bugImg').click()">📸 إرسال صورة المشكلة من التلفزيون للتلجرام</button>
+        <input id="bugImg" type="file" accept="image/*" style="display:none" onchange="doSendBugPhoto(this.files[0])">
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>🔧 سحب ملف محدد / إعدادات العرض اليدوية / AES</summary>
+      <div style="margin-top:10px;">
+        <label>سحب ملف نصوص محدد من اللعبة (مثل ملف Unity .bundle):</label>
+        <input id="customRel" type="text" placeholder="Media/StreamingAssets/aa/PS4/localization-string-tables-english(en)_assets_all.bundle">
+        <button class="btn-scan" onclick="doPullSpecificFile()">📂 سحب هذا الملف وفك نصوصه للتلجرام</button>
+
+        <div class="chk"><span>تشبيك الحروف العربية (Reshaper)</span><input type="checkbox" id="optReshape" checked></div>
+        <div class="chk"><span>عكس الاتجاه للعرض (BiDi)</span><input type="checkbox" id="optBidi" checked></div>
+        <div class="chk"><span>تثبيت الاتجاه لمنع العكس المزدوج (LRO)</span><input type="checkbox" id="optLro" checked></div>
+        <label>عرض السطر قبل الالتفاف (Wrap Width):</label>
+        <select id="optWrap">
+          <option value="32" selected>32 حرف (مناسب للمربعات الضيقة)</option>
+          <option value="44">44 حرف (متوسط)</option>
+          <option value="58">58 حرف (عريض)</option>
+          <option value="0">بدون التفاف تلقائي</option>
+        </select>
+        <label>مفتاح AES (اختياري لألعاب Unreal المشفّرة):</label>
+        <input id="optAes" type="text" placeholder="0x...">
+        <button class="btn-purple" style="margin:0" onclick="doRebuildWithFixes()">🔧 إعادة بناء الباتش بهذه الإعدادات</button>
+      </div>
+    </details>
+  </div>
 
   <div class="card">
     <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">
@@ -60,7 +97,7 @@
       <div style="margin-top:10px;">
         <label>اسم المستودع (Owner/Repo):</label>
         <input id="cfgRepo" type="text" placeholder="yassrrrt7-lgtm/ps5-arabi-poc">
-        <label>GitHub Token (صلاحية repo + actions):</label>
+        <label>GitHub Token (صلاحية repo + workflow):</label>
         <input id="cfgToken" type="password" placeholder="ghp_...">
         <button class="btn-scan" style="margin:0" onclick="saveCfg()">💾 حفظ الإعدادات في الآيفون</button>
       </div>
@@ -93,7 +130,7 @@ function getCfg(){
 function saveCfg(){
   localStorage.setItem('ps5_arabi_repo', document.getElementById('cfgRepo').value.trim());
   localStorage.setItem('ps5_arabi_token', document.getElementById('cfgToken').value.trim());
-  log('✅ تم حفظ إعدادات GitHub داخل متصفح الآيفون.', 'l-ok');
+  log('✅ تم حفظ إعدادات GitHub داخل الآيفون.', 'l-ok');
   document.getElementById('cfgDetails').open = false;
 }
 function loadCfgUI(){
@@ -111,120 +148,181 @@ async function ghFetch(path, opts={}){
     'Accept': 'application/vnd.github+json'
   }, opts.headers || {});
   const r = await fetch(`https://api.github.com/repos/${c.repo}${path}`, Object.assign({}, opts, {headers}));
-  if(!r.ok){
-    const txt = await r.text();
-    throw new Error(`GitHub ${r.status}: ${txt.slice(0,180)}`);
-  }
+  if(!r.ok){ const txt = await r.text(); throw new Error(`GitHub ${r.status}: ${txt.slice(0,180)}`); }
   return r.status === 204 ? null : r.json();
 }
-
 async function ghPutFile(repoPath, base64Content, message){
   let sha = undefined;
-  try{
-    const cur = await ghFetch(`/contents/${repoPath}`);
-    if(cur && cur.sha) sha = cur.sha;
-  }catch(_){}
+  try{ const cur = await ghFetch(`/contents/${repoPath}`); if(cur && cur.sha) sha = cur.sha; }catch(_){}
   return ghFetch(`/contents/${repoPath}`, {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({message, content: base64Content, sha})
   });
 }
-
 function bufToBase64(buf){
   const bytes = new Uint8Array(buf);
   let bin = '';
-  const chunk = 0x8000;
-  for(let i=0;i<bytes.length;i+=chunk){
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
-  }
+  for(let i=0;i<bytes.length;i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
   return btoa(bin);
+}
+function strToB64(s){ return btoa(unescape(encodeURIComponent(s))); }
+
+function getRenderConfig(){
+  return {
+    reshape: document.getElementById('optReshape').checked,
+    bidi: document.getElementById('optBidi').checked,
+    use_lro: document.getElementById('optLro').checked,
+    wrap_width: parseInt(document.getElementById('optWrap').value, 10) || 0,
+    aes_key: document.getElementById('optAes').value.trim(),
+    skip_keys: []
+  };
 }
 
 async function doScan(){
   try{
-    setProg(15, 'جاري فحص اللعبة الشغّالة على PS5...');
-    log('⏳ [1/1] جاري فحص /mnt/sandbox على الـ PS5...');
+    setProg(20, 'فحص اللعبة الشغّالة...');
     const r = await fetch('/api/scan');
     const d = await r.json();
-    if(!d.ok) throw new Error(d.error || 'لم يتم العثور على لعبة شغّالة. افتح اللعبة أولاً.');
+    if(!d.ok) throw new Error(d.error || 'افتح اللعبة أولاً ثم أعد الفحص.');
     LAST_SCAN = d;
     document.getElementById('vTitle').textContent = d.title_id;
     document.getElementById('vEngine').textContent = d.engine + (d.ue_ver ? ` (v${d.ue_ver})` : '');
     document.getElementById('vEnc').textContent = d.encrypted ? 'مشفّر 🔒' : 'غير مشفّر ✅';
     document.getElementById('vPatch').textContent = d.patch_installed ? 'مثبّت ✅' : 'لا يوجد';
-    setProg(100, 'تم الفحص بنجاح');
-    log(`✅ تم اكتشاف اللعبة: ${d.title_id} | المحرك: ${d.engine} | الأرشيف: ${d.pak_rel || 'ملفات مباشرة'}`, 'l-ok');
-  }catch(e){
-    setProg(0, 'فشل الفحص');
-    log('❌ خطأ: ' + e.message, 'l-err');
-  }
+    setProg(100, 'تم الفحص');
+    log(`✅ تم اكتشاف ${d.title_id} | المحرك: ${d.engine} | الملفات: ${d.total_files || '?'}`, 'l-ok');
+  }catch(e){ setProg(0,'فشل الفحص'); log('❌ ' + e.message, 'l-err'); }
 }
 
 async function doExtractAndSend(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
-    if(LAST_SCAN.encrypted){
-      log('❌ اللعبة مشفّرة (AES) ولا يمكن استخراج نصوصها بدون مفتاح التشفير.', 'l-err');
-      return;
-    }
-    setProg(20, 'سحب ملفات اللغة والخطوط من PS5...');
-    log(`⏳ [1/4] جاري استخراج ملفات اللغة والخطوط من ${LAST_SCAN.title_id}...`);
+    setProg(25, 'استخراج من PS5...');
+    log(`⏳ [1/4] استخراج الحزمة من ${LAST_SCAN.title_id}...`);
     const r = await fetch('/api/extract_bundle');
-    if(!r.ok) throw new Error('فشل الاستخراج من PS5: ' + await r.text());
+    if(!r.ok) throw new Error(await r.text());
     const buf = await r.arrayBuffer();
-    const mb = (buf.byteLength / (1024*1024)).toFixed(2);
-    log(`✅ [2/4] تم الاستخراج من PS5 بنجاح (${mb} م.ب).`, 'l-ok');
-
-    setProg(55, 'رفع الحزمة إلى GitHub...');
-    log('⏳ [3/4] جاري الرفع إلى GitHub وتشغيل فحص عبدالله + الإرسال للتلجرام...');
-    const b64 = bufToBase64(buf);
-    const metaB64 = btoa(unescape(encodeURIComponent(JSON.stringify(LAST_SCAN, null, 2))));
-    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/scan.json`, metaB64, `hub scan ${LAST_SCAN.title_id}`);
-    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/extracted.arabi`, b64, `hub extract ${LAST_SCAN.title_id}`);
-
-    setProg(80, 'تشغيل السيرفر السحابي...');
+    log(`✅ [2/4] تم الاستخراج (${(buf.byteLength/(1024*1024)).toFixed(2)} م.ب).`, 'l-ok');
+    setProg(60, 'الرفع للسحابة...');
+    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/scan.json`, strToB64(JSON.stringify(LAST_SCAN,null,2)), `scan ${LAST_SCAN.title_id}`);
+    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/render_config.json`, strToB64(JSON.stringify(getRenderConfig(),null,2)), `cfg ${LAST_SCAN.title_id}`);
+    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/extracted.arabi`, bufToBase64(buf), `extract ${LAST_SCAN.title_id}`);
     await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ref:'main', inputs:{action:'analyze_and_send', title_id:LAST_SCAN.title_id}})
     });
     setProg(100, 'تم الإرسال للتلجرام!');
-    log('✅ [4/4] تم التشغيل! خلال دقيقة بتوصلك ملفات النصوص وبرومبت جميني في التلجرام — تقدر تطفي البث عن السوني الحين.', 'l-ok');
-  }catch(e){
-    setProg(0, 'فشلت العملية');
-    log('❌ خطأ: ' + e.message, 'l-err');
-  }
+    log('✅ [4/4] تم! افتح التلجرام الحين — تقدر تطفي البث عن السوني.', 'l-ok');
+  }catch(e){ setProg(0,'فشلت العملية'); log('❌ ' + e.message, 'l-err'); }
+}
+
+async function doPullSpecificFile(){
+  try{
+    if(!LAST_SCAN) await doScan();
+    if(!LAST_SCAN) return;
+    const rel = document.getElementById('customRel').value.trim();
+    if(!rel) throw new Error('الصق مسار الملف أولاً.');
+    setProg(25, 'سحب الملف من PS5...');
+    const r = await fetch(`/api/read_file?rel=${encodeURIComponent(rel)}`);
+    if(!r.ok) throw new Error('الملف غير موجود بهذا المسار على السوني.');
+    const buf = await r.arrayBuffer();
+    const fname = rel.split('/').pop();
+    log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب). جاري فك نصوصه للتلجرام...`, 'l-ok');
+    setProg(65, 'رفع الملف للسحابة...');
+    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/target_file.json`, strToB64(JSON.stringify({rel, fname})), `target ${fname}`);
+    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+    await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ref:'main', inputs:{action:'extract_texts', title_id:LAST_SCAN.title_id}})
+    });
+    setProg(100, 'جاري فك النصوص للتلجرام!');
+    log('✅ تم! خلال 30 ثانية توصلك ملفات JSON جاهزة لجميني في التلجرام.', 'l-ok');
+  }catch(e){ setProg(0,'فشل السحب'); log('❌ ' + e.message, 'l-err'); }
 }
 
 async function doUploadTranslated(files){
   try{
     if(!files || !files.length) return;
     if(!LAST_SCAN) await doScan();
-    const tid = LAST_SCAN ? LAST_SCAN.title_id : prompt('أدخل Title ID اللعبة (مثل PPSA03524):');
+    const tid = LAST_SCAN ? LAST_SCAN.title_id : prompt('أدخل Title ID اللعبة:');
     if(!tid) return;
-    log(`⏳ جاري رفع ${files.length} ملف مترجم إلى GitHub للعبة ${tid}...`);
     let i = 0;
     for(const f of files){
       i++;
       setProg((i / (files.length + 1)) * 80, `رفع ${f.name}...`);
       const buf = await f.arrayBuffer();
-      await ghPutFile(`hub_games/${tid}/translated/${f.name}`, bufToBase64(buf), `upload ${f.name}`);
+      const dst = f.name.endsWith('.py') ? `hub_games/${tid}/${f.name}` : `hub_games/${tid}/translated/${f.name}`;
+      await ghPutFile(dst, bufToBase64(buf), `upload ${f.name}`);
       log(`✅ تم رفع ${f.name}`, 'l-ok');
     }
-    setProg(90, 'تشغيل المدقق الآلي وبناء الباتش...');
+    await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(JSON.stringify(getRenderConfig(),null,2)), `cfg ${tid}`);
     await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ref:'main', inputs:{action:'qa_and_build', title_id:tid}})
     });
     setProg(100, 'بدأ البناء السحابي!');
-    log('✅ بدأ التدقيق الآلي وبناء الباتش! بيوصلك إشعار في التلجرام أول ما يجهز للتثبيت.', 'l-ok');
-  }catch(e){
-    setProg(0, 'فشل الرفع');
-    log('❌ خطأ: ' + e.message, 'l-err');
-  }
+    log('✅ بدأ التدقيق الآلي وبناء الباتش! بيوصلك إشعار في التلجرام فور جاهزيته.', 'l-ok');
+  }catch(e){ setProg(0,'فشل الرفع'); log('❌ ' + e.message, 'l-err'); }
+}
+
+async function doApplyAiFix(){
+  try{
+    if(!LAST_SCAN) await doScan();
+    const tid = LAST_SCAN ? LAST_SCAN.title_id : prompt('أدخل Title ID اللعبة:');
+    if(!tid) return;
+    const raw = document.getElementById('aiFixCode').value.trim();
+    if(!raw) throw new Error('الصق كود الإصلاح من جميني في المربع أولاً.');
+    setProg(40, 'تطبيق كود الإصلاح...');
+    if(raw.startsWith('{')){
+      JSON.parse(raw); // validate JSON
+      await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(raw), `ai json fix ${tid}`);
+      log('✅ تم حفظ إعدادات الإصلاح (JSON) في السحابة.', 'l-ok');
+    } else {
+      await ghPutFile(`hub_games/${tid}/custom_fix.py`, strToB64(raw), `ai python fix ${tid}`);
+      log('✅ تم حفظ كود الإصلاح (custom_fix.py) في السحابة.', 'l-ok');
+    }
+    setProg(75, 'إعادة بناء الباتش (20 ثانية)...');
+    await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ref:'main', inputs:{action:'qa_and_build', title_id:tid}})
+    });
+    setProg(100, 'جاري تطبيق الإصلاح!');
+    log('✅ بدأ إعادة البناء بكود الإصلاح! انتظر إشعار التلجرام ثم اضغط (📥 3. تثبيت).', 'l-ok');
+  }catch(e){ setProg(0,'فشل التطبيق'); log('❌ ' + e.message, 'l-err'); }
+}
+
+async function doRebuildWithFixes(){
+  try{
+    if(!LAST_SCAN) await doScan();
+    const tid = LAST_SCAN ? LAST_SCAN.title_id : prompt('أدخل Title ID اللعبة:');
+    if(!tid) return;
+    setProg(40, 'حفظ الإعدادات...');
+    await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(JSON.stringify(getRenderConfig(),null,2)), `fix render ${tid}`);
+    await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ref:'main', inputs:{action:'qa_and_build', title_id:tid}})
+    });
+    setProg(100, 'جاري إعادة البناء!');
+    log('✅ بدأ إعادة البناء! انتظر إشعار التلجرام ثم اضغط (📥 3. تثبيت).', 'l-ok');
+  }catch(e){ setProg(0,'فشل الإصلاح'); log('❌ ' + e.message, 'l-err'); }
+}
+
+async function doSendBugPhoto(file){
+  try{
+    if(!file) return;
+    if(!LAST_SCAN) await doScan();
+    const tid = LAST_SCAN ? LAST_SCAN.title_id : 'UNKNOWN';
+    setProg(40, 'رفع الصورة للتشخيص...');
+    const buf = await file.arrayBuffer();
+    await ghPutFile(`hub_games/${tid}/bug_report.jpg`, bufToBase64(buf), `bug photo ${tid}`);
+    await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ref:'main', inputs:{action:'send_bug_photo', title_id:tid}})
+    });
+    setProg(100, 'تم إرسال الصورة!');
+    log('✅ وصلت الصورة والإعدادات الحالية للتلجرام — أرسلها لمحادثة AI Doctor في جميني.', 'l-ok');
+  }catch(e){ setProg(0,'فشل إرسال الصورة'); log('❌ ' + e.message, 'l-err'); }
 }
 
 async function doInstallLatest(){
@@ -232,58 +330,43 @@ async function doInstallLatest(){
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
     const tid = LAST_SCAN.title_id;
-    setProg(20, 'البحث عن آخر باتش جاهز...');
-    log(`⏳ [1/3] جاري جلب آخر باتش جاهز للعبة ${tid} من GitHub Releases...`);
+    setProg(20, 'جلب آخر باتش جاهز...');
     const rel = await ghFetch(`/releases/tags/patch-${tid}`);
-    const asset = (rel.assets || []).find(a => a.name.endsWith('.pak'));
-    if(!asset) throw new Error('لم يتم العثور على ملف .pak في الإصدار بعد.');
-    log(`⏳ [2/3] جاري تحميل ${asset.name} (${(asset.size/(1024*1024)).toFixed(2)} م.ب)...`);
-    setProg(45, 'جاري تحميل الباتش...');
+    const asset = (rel.assets || []).find(a => a.name.endsWith('.pak') || a.name.endsWith('.bundle') || a.name.endsWith('.json'));
+    if(!asset) throw new Error('لم يتم العثور على ملف الباتش في الإصدار بعد.');
+    log(`⏳ تحميل ${asset.name} (${(asset.size/(1024*1024)).toFixed(2)} م.ب)...`);
+    setProg(50, 'تحميل الباتش...');
     const c = getCfg();
-    const dl = await fetch(asset.url, {
-      headers: {'Authorization':'Bearer '+c.token, 'Accept':'application/octet-stream'}
-    });
-    if(!dl.ok) throw new Error('فشل تحميل الباتش من GitHub: ' + dl.status);
+    const dl = await fetch(asset.url, { headers:{'Authorization':'Bearer '+c.token, 'Accept':'application/octet-stream'} });
+    if(!dl.ok) throw new Error('فشل التحميل: ' + dl.status);
     const pakBuf = await dl.arrayBuffer();
-
-    setProg(75, 'جاري التثبيت على PS5...');
-    const relTarget = LAST_SCAN.patch_rel || 'gameface/content/paks/pakchunk0-ps5_999_p.pak';
-    log(`⏳ [3/3] جاري نسخ الباتش إلى ShadowMountPlus (${relTarget})...`);
-    const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURIComponent(relTarget)}`, {
-      method: 'POST',
-      body: pakBuf
-    });
+    setProg(80, 'التثبيت على PS5...');
+    const relTarget = (rel.body && rel.body.startsWith('TARGET_REL=')) ? rel.body.slice(11).trim().split('\n')[0] : (LAST_SCAN.patch_rel || 'gameface/content/paks/pakchunk0-ps5_999_p.pak');
+    const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURIComponent(relTarget)}`, { method:'POST', body: pakBuf });
     const res = await ins.json();
-    if(!res.ok) throw new Error(res.error || 'فشل التثبيت على السوني');
+    if(!res.ok) throw new Error(res.error || 'فشل التثبيت');
     setProg(100, 'تم التثبيت بنجاح!');
-    log(`✅ تم التثبيت والتحقق بنجاح (${res.bytes} بايت) في ${res.path}! أعد تشغيل اللعبة واستمتع.`, 'l-ok');
+    log(`✅ تم التثبيت (${res.bytes} بايت) في ${res.path}! أعد تشغيل اللعبة واستمتع.`, 'l-ok');
     document.getElementById('vPatch').textContent = 'مثبّت ✅';
-  }catch(e){
-    setProg(0, 'فشل التثبيت');
-    log('❌ خطأ: ' + e.message, 'l-err');
-  }
+  }catch(e){ setProg(0,'فشل التثبيت'); log('❌ ' + e.message, 'l-err'); }
 }
 
 async function doUninstall(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
-    setProg(50, 'جاري إزالة التعريب...');
-    log(`⏳ جاري إزالة تعريب ${LAST_SCAN.title_id} واسترجاع اللعبة أصلية...`);
+    setProg(50, 'إزالة التعريب...');
     const r = await fetch(`/api/uninstall?title_id=${encodeURIComponent(LAST_SCAN.title_id)}`, {method:'POST'});
     const d = await r.json();
-    if(!d.ok) throw new Error(d.error || 'فشل الحذف');
+    if(!d.ok) throw new Error(d.error);
     setProg(100, 'تمت الإزالة');
-    log('✅ تمت إزالة التعريب بنجاح ورجعت اللعبة أصلية 100%.', 'l-ok');
+    log('✅ تمت إزالة التعريب ورجعت اللعبة أصلية 100%.', 'l-ok');
     document.getElementById('vPatch').textContent = 'لا يوجد';
-  }catch(e){
-    setProg(0, 'فشل الحذف');
-    log('❌ خطأ: ' + e.message, 'l-err');
-  }
+  }catch(e){ setProg(0,'فشل الحذف'); log('❌ ' + e.message, 'l-err'); }
 }
 
 loadCfgUI();
-log('جاهز — افتح أي لعبة على PS5 ثم اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
+log('جاهز (النسخة النهائية) — اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
 </script>
 </body>
 </html>

@@ -4,14 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "analyze_and_send or qa_and_build"
+        description: "analyze_and_send | extract_texts | qa_and_build | send_bug_photo"
         required: true
         type: choice
         options:
           - analyze_and_send
+          - extract_texts
           - qa_and_build
+          - send_bug_photo
       title_id:
-        description: "PS5/PS4 Title ID (e.g. PPSA03524)"
+        description: "PS5/PS4 Title ID (e.g. PPSA03524 or CUSA34285)"
         required: true
         type: string
 
@@ -24,13 +26,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Python Libraries
-        run: pip install requests arabic-reshaper python-bidi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Run PS5 Arabi Hub Engine
+      - name: Install Beast Cloud Engine Libraries (UnityPy + Arabic + Requests)
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests arabic-reshaper python-bidi UnityPy
+
+      - name: Run PS5 Arabi Hub v3 Beast Engine
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 -u arabi_hub_engine/hub_pipeline.py \
             --action "${{ github.event.inputs.action }}" \
