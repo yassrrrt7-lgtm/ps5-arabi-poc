@@ -449,7 +449,7 @@ def decode_unity_addressables_catalog(raw_catalog: Path) -> tuple[list[tuple[str
                         return b
         return ""
 
-    text_kws = ("localiz", "lang", "english", "string", "text", "subtit", "dialog", "i2loc", "csv", "json", "xml", "tradu", "loc_")
+    text_kws = ("localiz", "lang", "english", "string", "subtit", "dialog", "i2loc", "csv", "json", "xml", "tradu", "loc_")
     font_kws = ("/font/", ".ttf", ".otf", "sdf.asset")
     text_hits, font_hits = [], []
     seen_t, seen_f = set(), set()
@@ -462,7 +462,7 @@ def decode_unity_addressables_catalog(raw_catalog: Path) -> tuple[list[tuple[str
         low = asset.lower()
         if low.endswith(".bundle"):
             continue
-        if any(k in low for k in text_kws) and not low.endswith((".png", ".wav", ".ogg", ".mp3", ".mat", ".fbx", ".prefab", ".shadergraph")):
+        if any(k in low for k in text_kws) and not low.endswith((".png", ".wav", ".ogg", ".mp3", ".mat", ".fbx", ".prefab", ".shadergraph", ".tga", ".rendertexture", ".controller", ".anim", "ofl.txt")) and "texture" not in low:
             bpath = resolve_bundle(dep_i)
             if bpath and (bpath, asset) not in seen_t:
                 seen_t.add((bpath, asset))
@@ -572,7 +572,7 @@ def analyze_file_tree(tree_text: str) -> list[str]:
     hits = []
     keywords = (
         ".locres", ".ufont", ".ttf", ".otf", "localization", "language", "lang",
-        "subtitles", "dialog", "text", "string", "resources.assets", "globalgamemanagers",
+        "subtitles", "dialog", "string", "resources.assets", "globalgamemanagers",
         "catalog.json", ".json", ".xml", ".csv", ".po", ".msg", ".fmg", ".gxt2", ".rpf", ".bundle",
     )
     for line in tree_text.splitlines():
@@ -675,6 +675,8 @@ def cmd_extract_texts(title_id: str):
                 if len(seen_fb) >= 6:
                     break
         tg_send_message("\n".join(lines))
+        if text_hits:
+            tg_send_message("\n".join(list(dict.fromkeys(b for b, _ in text_hits))[:6]))
         return
     elif fname_low.endswith(".json"):
         data = json.loads(raw_file.read_text(encoding="utf-8"))
