@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install clang & lld
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang lld
+
       - name: Download ps5-payload-sdk (Authenticated)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -25,7 +28,6 @@ jobs:
 
       - name: Compile arabi_hub.elf for PS5 5.50
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq clang lld
           SDK_DIR=$(dirname $(dirname $(find /tmp/ps5sdk -name prospero.mk | head -n 1)))
           echo "SDK_DIR=$SDK_DIR"
           make -C ps5_hub PS5_PAYLOAD_SDK="$SDK_DIR"

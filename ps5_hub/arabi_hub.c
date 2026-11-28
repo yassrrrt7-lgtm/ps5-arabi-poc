@@ -1,8 +1,8 @@
 /*
- * PS5 Arabi Hub (FW 5.50 / etaHEN + ShadowMountPlus)
- * Lightweight local HTTP server on port 8080 serving the Arabic Safari Dashboard
- * and exposing /api/scan, /api/extract_bundle, /api/install, /api/uninstall.
- * Keeps PS5 100% offline — iPhone Safari acts as the bridge to GitHub & Telegram.
+ * PS5 Arabi Hub v1.1 (FW 5.50 / etaHEN + ShadowMountPlus)
+ * - Uses port 8899 (avoids port 8080 conflict with etaHEN/websrv)
+ * - Pops up an official PS5 TV notification when started!
+ * - Scans BOTH PS5 (/mnt/sandbox/PPSA*) and PS4 FPKG (/mnt/sandbox/pfsmnt/CUSA*)
  */
 
 #include <arpa/inet.h>
@@ -20,9 +20,24 @@
 
 #include "dashboard_html.h"
 
-#define HUB_PORT 8080
+#define HUB_PORT 8899
 #define BACKPORTS_ROOT "/data/homebrew/backports"
 #define UE_PAK_MAGIC 0x5A6F12E1U
+
+typedef struct {
+    char unused[45];
+    char message[3075];
+} ps5_notify_t;
+
+int sceKernelSendNotificationRequest(int, ps5_notify_t *, size_t, int) __attribute__((weak));
+
+static void ps5_notify(const char *msg) {
+    if (!sceKernelSendNotificationRequest) return;
+    ps5_notify_t req;
+    memset(&req, 0, sizeof(req));
+    strncpy(req.message, msg, sizeof(req.message) - 1);
+    sceKernelSendNotificationRequest(0, &req, sizeof(req), 0);
+}
 
 typedef struct {
     int ok;
@@ -120,7 +135,6 @@ static int probe_ue_pak(const char *pak_path, ScanInfo *info) {
     }
     close(fd);
 
-    /* Scan for UE4/UE5 Pak magic 0x5A6F12E1 in footer */
     for (int off = (int)sizeof(tail) - 44; off >= 0; off--) {
         uint32_t magic;
         memcpy(&magic, tail + off, 4);
@@ -171,7 +185,6 @@ static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) 
                         strncpy(info->pak_full, full, sizeof(info->pak_full) - 1);
                         strncpy(info->pak_rel, sub_rel, sizeof(info->pak_rel) - 1);
                         strncpy(info->engine, "Unreal Engine", sizeof(info->engine) - 1);
-                        /* Build default ShadowMountPlus patch path: <dir>/pakchunk0-ps5_999_p.pak */
                         const char *slash = strrchr(sub_rel, '/');
                         if (slash) {
                             size_t dlen = (size_t)(slash - sub_rel);
@@ -191,23 +204,48 @@ static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) 
 
 static int run_scan(ScanInfo *info) {
     memset(info, 0, sizeof(*info));
+
+    /* 1. Check PS5 games in /mnt/sandbox/PPSA*_000/app0 */
     DIR *d = opendir("/mnt/sandbox");
-    if (!d) return 0;
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
-        if ((strncmp(e->d_name, "PPSA", 4) == 0 || strncmp(e->d_name, "CUSA", 4) == 0) && strlen(e->d_name) >= 9) {
-            char app0[512];
-            snprintf(app0, sizeof(app0), "/mnt/sandbox/%s/app0", e->d_name);
-            struct stat st;
-            if (stat(app0, &st) == 0 && S_ISDIR(st.st_mode)) {
-                memcpy(info->title_id, e->d_name, 9);
-                info->title_id[9] = 0;
-                strncpy(info->mount_path, app0, sizeof(info->mount_path) - 1);
-                break;
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if ((strncmp(e->d_name, "PPSA", 4) == 0 || strncmp(e->d_name, "CUSA", 4) == 0) && strlen(e->d_name) >= 9) {
+                char app0[512];
+                snprintf(app0, sizeof(app0), "/mnt/sandbox/%s/app0", e->d_name);
+                struct stat st;
+                if (stat(app0, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    memcpy(info->title_id, e->d_name, 9);
+                    info->title_id[9] = 0;
+                    strncpy(info->mount_path, app0, sizeof(info->mount_path) - 1);
+                    break;
+                }
             }
         }
+        closedir(d);
     }
-    closedir(d);
+
+    /* 2. Check PS4 FPKG games in /mnt/sandbox/pfsmnt/CUSA*-app0* */
+    if (!info->title_id[0]) {
+        d = opendir("/mnt/sandbox/pfsmnt");
+        if (d) {
+            struct dirent *e;
+            while ((e = readdir(d)) != NULL) {
+                if (strncmp(e->d_name, "CUSA", 4) == 0 && strstr(e->d_name, "app0")) {
+                    char full[512];
+                    snprintf(full, sizeof(full), "/mnt/sandbox/pfsmnt/%s", e->d_name);
+                    struct stat st;
+                    if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        memcpy(info->title_id, e->d_name, 9);
+                        info->title_id[9] = 0;
+                        strncpy(info->mount_path, full, sizeof(info->mount_path) - 1);
+                        break;
+                    }
+                }
+            }
+            closedir(d);
+        }
+    }
 
     if (!info->title_id[0]) return 0;
     find_largest_pak(info->mount_path, "", info);
@@ -227,7 +265,7 @@ static void handle_extract_bundle(int cfd) {
         return;
     }
     if (!g_scan.pak_full[0] || g_scan.index_size == 0) {
-        send_json(cfd, 400, "{\"ok\":false,\"error\":\"Only Unreal .pak extraction is active in v1\"}");
+        send_json(cfd, 400, "{\"ok\":false,\"error\":\"Only Unreal .pak extraction is active in v1.1\"}");
         return;
     }
     int fd = open(g_scan.pak_full, O_RDONLY);
@@ -411,7 +449,10 @@ static void handle_client(int cfd) {
 
 int main(void) {
     int sfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sfd < 0) return 1;
+    if (sfd < 0) {
+        ps5_notify("PS5 Arabi Hub: socket() failed!");
+        return 1;
+    }
     int opt = 1;
     setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
@@ -422,11 +463,12 @@ int main(void) {
     addr.sin_port = htons(HUB_PORT);
 
     if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        ps5_notify("PS5 Arabi Hub: bind() failed on port 8899!");
         close(sfd);
         return 1;
     }
     listen(sfd, 8);
-    printf("[PS5 Arabi Hub] Listening on port %d...\n", HUB_PORT);
+    ps5_notify("PS5 Arabi Hub READY!\nOpen http://172.20.10.10:8899");
 
     while (1) {
         int cfd = accept(sfd, NULL, NULL);
