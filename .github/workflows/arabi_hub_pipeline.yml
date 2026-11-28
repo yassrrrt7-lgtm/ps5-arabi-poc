@@ -30,18 +30,22 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Universal Cloud Engine Tools (UnityPy + Arabic + repak)
+      - name: Install Universal Cloud Engine Tools (UnityPy + Arabic)
         run: |
           python3 -m pip install --upgrade pip
           pip install requests arabic-reshaper python-bidi UnityPy
-          # Download prebuilt repak CLI for Unreal Engine 4/5 .pak building
-          REPAK_URL=$(curl -s https://api.github.com/repos/trumank/repak/releases/latest \
-            | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); print(next((a['browser_download_url'] for a in assets if 'x86_64-unknown-linux' in a['name'] and a['name'].endswith('.tar.xz')), ''))")
+
+      - name: Install Optional repak CLI (Unreal 4/5)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPAK_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/trumank/repak/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); print(next((a['browser_download_url'] for a in assets if 'x86_64-unknown-linux' in a['name'] and a['name'].endswith('.tar.xz')), ''))" || true)
           if [ -n "$REPAK_URL" ]; then
             curl -sL "$REPAK_URL" -o /tmp/repak.tar.xz
             tar -xJf /tmp/repak.tar.xz -C /tmp
             find /tmp -name repak -type f -exec sudo install -m 755 {} /usr/local/bin/repak \;
-            repak --version || true
           fi
 
       - name: Run PS5 Arabi Hub v5 Ultimate Universal Engine
