@@ -166,6 +166,26 @@ async function ghPutFile(repoPath, base64Content, message){
     body: JSON.stringify({message, content: base64Content, sha})
   });
 }
+
+async function ghPutSmart(repoPath, buf, message){
+  const CHUNK = 15 * 1024 * 1024; // 15 MB safe chunk for iPhone Safari + GitHub API
+  if(buf.byteLength <= CHUNK){
+    await ghPutFile(repoPath, bufToBase64(buf), message);
+    return;
+  }
+  const fname = repoPath.split('/').pop();
+  const dir = repoPath.slice(0, repoPath.lastIndexOf('/'));
+  const total = Math.ceil(buf.byteLength / CHUNK);
+  log(`📦 ملف كبير (${(buf.byteLength/1048576).toFixed(1)} م.ب) — تقسيم تلقائي إلى ${total} أجزاء آمنة...`, 'l-info');
+  for(let ci = 0; ci < total; ci++){
+    const slice = buf.slice(ci * CHUNK, Math.min((ci + 1) * CHUNK, buf.byteLength));
+    const pName = `${fname}.part${String(ci).padStart(3,'0')}`;
+    log(`⬆️ رفع جزء ${ci+1}/${total} (${(slice.byteLength/1048576).toFixed(1)} م.ب)...`);
+    await ghPutFile(`${dir}/${pName}`, bufToBase64(slice), `${message} part ${ci+1}/${total}`);
+  }
+  await ghPutFile(`${dir}/${fname}.chunks.json`, strToB64(JSON.stringify({fname, chunks: total, size: buf.byteLength})), `${message} chunks meta`);
+}
+
 function bufToBase64(buf){
   const bytes = new Uint8Array(buf);
   let bin = '';
@@ -279,7 +299,7 @@ async function doPullSpecificFile(){
     log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب).`, 'l-ok');
     setProg(45, 'رفع الملف للسحابة...');
     await ghPutFile(`hub_games/${tid}/target_file.json`, strToB64(JSON.stringify({rel, fname})), `target ${fname}`);
-    await ghPutFile(`hub_games/${tid}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+    await ghPutSmart(`hub_games/${tid}/raw/${fname}`, buf, `raw ${fname}`);
 
     // Auto-pull Unity Addressables catalog.json if present so CRC mismatch NEVER happens!
     if(fname.toLowerCase().endsWith('.bundle')){
@@ -360,10 +380,13 @@ async function pullMultipleFiles(tid, paths){
     const fname = rel.split('/').pop();
     setProg(15 + (i / cleanPaths.length) * 65, `سحب ${fname}...`);
     log(`⏳ [${i+1}/${cleanPaths.length}] سحب ${rel}...`);
-    const r = await fetch(`/api/read_file?rel=${encodeURI(rel)}`);
-    if(!r.ok){ log(`⚠️ تعذر سحب ${rel} (${r.status})`, 'l-warn'); continue; }
-    const buf = await r.arrayBuffer();
-    await ghPutFile(`hub_games/${tid}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+    let buf;
+    try{
+      const r = await fetch(`/api/read_file?rel=${encodeURI(rel)}`);
+      if(!r.ok){ log(`⚠️ تعذر سحب ${rel} (${r.status})`, 'l-warn'); continue; }
+      buf = await r.arrayBuffer();
+      await ghPutSmart(`hub_games/${tid}/raw/${fname}`, buf, `raw ${fname}`);
+    }catch(fe){ log(`⚠️ تخطي ${fname} بسبب خطأ شبكة: ${fe.message}`, 'l-warn'); continue; }
     const low = fname.toLowerCase();
     if(low === 'catalog.json' && cleanPaths.length > 1){
       await ghPutFile(`hub_games/${tid}/catalog_file.json`, strToB64(JSON.stringify({rel, fname})), `catalog meta`);

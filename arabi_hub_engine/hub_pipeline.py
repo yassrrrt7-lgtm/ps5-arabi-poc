@@ -112,6 +112,28 @@ AI_DOCTOR_MASTER_PROMPT = """أنت (دكتور التعريب — PS5 Arabi AI 
 
 # ─────────────────────────── Helpers & SHA-256 Manifest ───────────────────────────
 
+
+def reassemble_chunked_raw_files(gdir: Path):
+    """Automatically merges any >15MB chunked files uploaded from iPhone Safari (.chunks.json + .partNNN)."""
+    raw_dir = gdir / "raw"
+    if not raw_dir.exists():
+        return
+    for meta_p in sorted(raw_dir.glob("*.chunks.json")):
+        try:
+            info = json.loads(meta_p.read_text(encoding="utf-8"))
+            fname = info["fname"]
+            count = int(info["chunks"])
+            out_p = raw_dir / fname
+            with out_p.open("wb") as out_f:
+                for i in range(count):
+                    part_p = raw_dir / f"{fname}.part{i:03d}"
+                    if part_p.exists():
+                        out_f.write(part_p.read_bytes())
+            print(f"Reassembled chunked file {fname} ({out_p.stat().st_size:,} bytes from {count} parts)", flush=True)
+        except Exception as e:
+            print(f"Chunk reassembly error for {meta_p.name}: {e}", flush=True)
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -1154,6 +1176,7 @@ def cmd_analyze(title_id: str):
 
 def cmd_extract_texts(title_id: str):
     gdir = Path("hub_games") / title_id
+    reassemble_chunked_raw_files(gdir)
     meta = json.loads((gdir / "target_file.json").read_text(encoding="utf-8"))
     raw_file = gdir / "raw" / meta["fname"]
     fname_low = meta["fname"].lower()
@@ -1236,6 +1259,7 @@ def cmd_extract_texts(title_id: str):
 def cmd_canary_test(title_id: str):
     """Abdullah Al-Subaie Step 4: 10-line Arabic Canary Rendering Test BEFORE full translation!"""
     gdir = Path("hub_games") / title_id
+    reassemble_chunked_raw_files(gdir)
     cfg = load_render_cfg(gdir)
     master_en = json.loads((gdir / "master_en_map.json").read_text(encoding="utf-8")) if (gdir / "master_en_map.json").exists() else {}
     if not master_en:
@@ -1266,6 +1290,7 @@ def cmd_canary_test(title_id: str):
 
 def cmd_qa_and_build(title_id: str):
     gdir = Path("hub_games") / title_id
+    reassemble_chunked_raw_files(gdir)
     cfg = load_render_cfg(gdir)
     tr_dir = gdir / "translated"
     master_en = json.loads((gdir / "master_en_map.json").read_text(encoding="utf-8")) if (gdir / "master_en_map.json").exists() else {}
