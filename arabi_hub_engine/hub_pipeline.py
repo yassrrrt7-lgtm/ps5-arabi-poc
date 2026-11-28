@@ -959,6 +959,11 @@ def split_and_send_parts(title_id: str, strings_map: dict[str, str], gdir: Path,
     parts_dir.mkdir(parents=True, exist_ok=True)
     (gdir / "master_en_map.json").write_text(json.dumps(strings_map, ensure_ascii=False, indent=1), encoding="utf-8")
     record_manifest(gdir, "extracted_strings_count", len(strings_map))
+    subprocess.run(["git", "config", "user.name", "PS5 Arabi Bot"], check=False)
+    subprocess.run(["git", "config", "user.email", "bot@ps5arabi.local"], check=False)
+    subprocess.run(["git", "add", str(gdir / "master_en_map.json"), str(gdir / "manifest.json")], check=False)
+    subprocess.run(["git", "commit", "-m", f"save master_en_map {title_id}"], check=False)
+    subprocess.run(["git", "push"], check=False)
 
     keys = list(strings_map.keys())
     total_parts = max(1, (len(keys) + chunk_size - 1) // chunk_size)
@@ -1262,6 +1267,13 @@ def cmd_canary_test(title_id: str):
     reassemble_chunked_raw_files(gdir)
     cfg = load_render_cfg(gdir)
     master_en = json.loads((gdir / "master_en_map.json").read_text(encoding="utf-8")) if (gdir / "master_en_map.json").exists() else {}
+    if not master_en and (gdir / "target_file.json").exists():
+        meta = json.loads((gdir / "target_file.json").read_text(encoding="utf-8"))
+        rf = gdir / "raw" / meta["fname"]
+        if rf.exists() and meta["fname"].lower().endswith((".bundle", ".assets")):
+            master_en = extract_unity_universal(rf)
+        elif rf.exists() and meta["fname"].lower().endswith(".locres"):
+            _, master_en = parse_locres(rf.read_bytes())
     if not master_en:
         tg_send_message(f"⚠️ استخرج نصوص {title_id} أولاً قبل تشغيل اختبار الـ 10 سطور.")
         return
