@@ -160,7 +160,7 @@ static int try_mount_unionfs(const char *tid, const char *dst_mnt) {
 
     struct statfs sfs;
     if (statfs(dst_mnt, &sfs) != 0) return -errno;
-    if (strcmp(sfs.f_fstypename, "unionfs") == 0) return 2;
+    if (strstr(sfs.f_mntfromname, BACKPORTS_ROOT) != NULL) return 2;
 
     struct iovec iov[] = {
         IOVEC_ENTRY("fstype"),   IOVEC_ENTRY("unionfs"),
@@ -385,7 +385,7 @@ static int run_scan(ScanInfo *info) {
     struct statfs sfs;
     if (statfs(info->mount_path, &sfs) == 0) {
         strncpy(info->fs_type, sfs.f_fstypename, sizeof(info->fs_type) - 1);
-        info->unionfs_active = (strcmp(sfs.f_fstypename, "unionfs") == 0);
+        info->unionfs_active = (strstr(sfs.f_mntfromname, BACKPORTS_ROOT) != NULL);
     } else {
         strncpy(info->fs_type, "unknown", sizeof(info->fs_type) - 1);
     }
@@ -702,7 +702,7 @@ int main(void) {
         FD_SET(sfd, &rfds);
         struct timeval tv;
         tv.tv_sec = 0;
-        tv.tv_usec = 200000; /* 200ms auto-mount poll interval */
+        tv.tv_usec = 50000; /* 200ms auto-mount poll interval */
 
         int sel = select(sfd + 1, &rfds, NULL, NULL, &tv);
         if (sel > 0 && FD_ISSET(sfd, &rfds)) {
