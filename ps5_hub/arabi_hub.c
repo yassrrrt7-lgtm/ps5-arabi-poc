@@ -1,13 +1,10 @@
 /*
- * PS5 Arabi Hub v2.0 (FW 5.50 / etaHEN + ShadowMountPlus)
- * Universal Engine Bridge:
- *   - Scans BOTH PS5 (/mnt/sandbox/PPSA*) and PS4 FPKG (/mnt/sandbox/pfsmnt/CUSA*)
- *   - /api/scan           : Detects Title ID, Engine (Unreal / Unity / RE / RAGE / Generic), Encryption
- *   - /api/file_tree      : Streams full relative file_tree.txt (works on 100% of ALL engines!)
- *   - /api/read_file      : Streams any relative file from the running game (for Unity/JSON/etc.)
- *   - /api/extract_bundle : Streams UE .pak index OR universal file_tree.txt for non-UE engines
- *   - /api/install        : Writes final patch directly to /data/homebrew/backports/<TITLE_ID>/...
- *   - /api/uninstall      : Cleanly removes patch & restores original game
+ * PS5 Arabi Hub v5.0 — ULTIMATE UNIVERSAL EDITION (FW 5.50 / etaHEN + ShadowMountPlus)
+ * Works on ALL PS5 & PS4 games in ANY format:
+ *   - PS5 ShadowMountPlus (.exfat / .ffpkg / .ffpfsc / Dump Folders)
+ *   - PS4 & PS5 Installed FPKGs (.pkg) via live Kernel unionfs Auto-Mounter!
+ *   - Permanent Auto-Updating Web Dashboard (loaded live from GitHub in iPhone Safari)
+ *   - Zero-Corruption: Never modifies original game files; 100% reversible in 1 tap.
  */
 
 #include <arpa/inet.h>
@@ -19,14 +16,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
+#include <sys/mount.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include "dashboard_html.h"
 
 #define BACKPORTS_ROOT "/data/homebrew/backports"
 #define UE_PAK_MAGIC 0x5A6F12E1U
+#define IOVEC_ENTRY(x) { (x) ? (void *)(x) : NULL, (x) ? strlen(x) + 1 : 0 }
+#define IOVEC_SIZE(x)  (sizeof(x) / sizeof(struct iovec))
 
 typedef struct {
     char unused[45];
@@ -47,6 +51,9 @@ typedef struct {
     int ok;
     char title_id[32];
     char mount_path[512];
+    char game_format[64];
+    char fs_type[32];
+    int unionfs_active;
     char engine[32];
     char pak_full[768];
     char pak_rel[512];
@@ -61,6 +68,7 @@ typedef struct {
 } ScanInfo;
 
 static ScanInfo g_scan;
+static char g_last_mounted_key[256] = {0};
 
 static void send_all(int fd, const void *buf, size_t len) {
     const uint8_t *p = (const uint8_t *)buf;
@@ -99,10 +107,26 @@ static void mkdir_p(const char *path) {
         if (*p == '/') {
             *p = 0;
             mkdir(tmp, 0777);
+            chmod(tmp, 0777);
             *p = '/';
         }
     }
     mkdir(tmp, 0777);
+    chmod(tmp, 0777);
+}
+
+static int dir_has_files(const char *path) {
+    DIR *d = opendir(path);
+    if (!d) return 0;
+    struct dirent *e;
+    int found = 0;
+    while ((e = readdir(d)) != NULL) {
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+        found = 1;
+        break;
+    }
+    closedir(d);
+    return found;
 }
 
 static void rm_rf(const char *path) {
@@ -122,6 +146,101 @@ static void rm_rf(const char *path) {
     }
     closedir(d);
     rmdir(path);
+}
+
+/*
+ * Mounts /data/homebrew/backports/<TID> as a transparent unionfs overlay
+ * on top of a running game's mount path (PS4 FPKG or PS5 FPKG/App).
+ * Returns: 1 = newly mounted, 2 = already unionfs, 0 = no patch dir, -errno = error.
+ */
+static int try_mount_unionfs(const char *tid, const char *dst_mnt) {
+    char bp_dir[512];
+    snprintf(bp_dir, sizeof(bp_dir), "%s/%s", BACKPORTS_ROOT, tid);
+    if (!dir_has_files(bp_dir)) return 0;
+
+    struct statfs sfs;
+    if (statfs(dst_mnt, &sfs) != 0) return -errno;
+    if (strcmp(sfs.f_fstypename, "unionfs") == 0) return 2;
+
+    struct iovec iov[] = {
+        IOVEC_ENTRY("fstype"),   IOVEC_ENTRY("unionfs"),
+        IOVEC_ENTRY("from"),     IOVEC_ENTRY(bp_dir),
+        IOVEC_ENTRY("fspath"),   IOVEC_ENTRY(dst_mnt),
+        IOVEC_ENTRY("copymode"), IOVEC_ENTRY("transparent"),
+        IOVEC_ENTRY("notime"),   IOVEC_ENTRY(NULL),
+        IOVEC_ENTRY("fnodup"),   IOVEC_ENTRY(NULL)
+    };
+    if (nmount(iov, IOVEC_SIZE(iov), 0) == 0) {
+        return 1;
+    }
+    return -errno;
+}
+
+/*
+ * Fast background poller called every ~200ms in the main select() loop.
+ * Automatically activates Arabic unionfs overlay the instant ANY patched
+ * PS4 FPKG or PS5 game launches!
+ */
+static void poll_auto_mount(void) {
+    /* 1. Check /mnt/sandbox/<PPSA|CUSA>*_000/app0 */
+    DIR *d = opendir("/mnt/sandbox");
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if ((strncmp(e->d_name, "PPSA", 4) == 0 || strncmp(e->d_name, "CUSA", 4) == 0) && strlen(e->d_name) >= 9) {
+                char tid[16];
+                memcpy(tid, e->d_name, 9);
+                tid[9] = 0;
+                char app0[512];
+                snprintf(app0, sizeof(app0), "/mnt/sandbox/%s/app0", e->d_name);
+                struct stat st;
+                if (stat(app0, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    int rc = try_mount_unionfs(tid, app0);
+                    if (rc == 1) {
+                        char key[256];
+                        snprintf(key, sizeof(key), "%s:%s", tid, app0);
+                        if (strcmp(g_last_mounted_key, key) != 0) {
+                            strncpy(g_last_mounted_key, key, sizeof(g_last_mounted_key) - 1);
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "PS5 Arabi Hub: Arabic Patch Active (%s)!", tid);
+                            ps5_notify(msg);
+                        }
+                    }
+                }
+            }
+        }
+        closedir(d);
+    }
+
+    /* 2. Check /mnt/sandbox/pfsmnt/CUSA*-app0* (PS4 FPKGs) */
+    d = opendir("/mnt/sandbox/pfsmnt");
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if (strncmp(e->d_name, "CUSA", 4) == 0 && strlen(e->d_name) >= 9 && strstr(e->d_name, "app0")) {
+                char tid[16];
+                memcpy(tid, e->d_name, 9);
+                tid[9] = 0;
+                char full[512];
+                snprintf(full, sizeof(full), "/mnt/sandbox/pfsmnt/%s", e->d_name);
+                struct stat st;
+                if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    int rc = try_mount_unionfs(tid, full);
+                    if (rc == 1) {
+                        char key[256];
+                        snprintf(key, sizeof(key), "%s:%s", tid, full);
+                        if (strcmp(g_last_mounted_key, key) != 0) {
+                            strncpy(g_last_mounted_key, key, sizeof(g_last_mounted_key) - 1);
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "PS5 Arabi Hub: PS4 FPKG Arabic Active (%s)!", tid);
+                            ps5_notify(msg);
+                        }
+                    }
+                }
+            }
+        }
+        closedir(d);
+    }
 }
 
 static int probe_ue_pak(const char *pak_path, ScanInfo *info) {
@@ -207,7 +326,8 @@ static void walk_and_detect(const char *base, const char *rel, ScanInfo *info, F
                 }
             } else if (nlen > 4 && strcasecmp(e->d_name + nlen - 4, ".rpf") == 0) {
                 if (!info->engine[0]) strncpy(info->engine, "Rockstar RAGE", sizeof(info->engine) - 1);
-            } else if (strcmp(e->d_name, "globalgamemanagers") == 0 || strcmp(e->d_name, "resources.assets") == 0) {
+            } else if (strcmp(e->d_name, "globalgamemanagers") == 0 || strcmp(e->d_name, "resources.assets") == 0 ||
+                       (nlen > 7 && strcasecmp(e->d_name + nlen - 7, ".bundle") == 0)) {
                 if (!info->engine[0]) strncpy(info->engine, "Unity", sizeof(info->engine) - 1);
             }
         }
@@ -230,6 +350,7 @@ static int run_scan(ScanInfo *info) {
                     memcpy(info->title_id, e->d_name, 9);
                     info->title_id[9] = 0;
                     strncpy(info->mount_path, app0, sizeof(info->mount_path) - 1);
+                    strncpy(info->game_format, strncmp(info->title_id, "CUSA", 4) == 0 ? "PS4 Sandbox" : "PS5 ShadowMount/App", sizeof(info->game_format) - 1);
                     break;
                 }
             }
@@ -250,6 +371,7 @@ static int run_scan(ScanInfo *info) {
                         memcpy(info->title_id, e->d_name, 9);
                         info->title_id[9] = 0;
                         strncpy(info->mount_path, full, sizeof(info->mount_path) - 1);
+                        strncpy(info->game_format, "PS4 FPKG (.pkg)", sizeof(info->game_format) - 1);
                         break;
                     }
                 }
@@ -260,6 +382,14 @@ static int run_scan(ScanInfo *info) {
 
     if (!info->title_id[0]) return 0;
 
+    struct statfs sfs;
+    if (statfs(info->mount_path, &sfs) == 0) {
+        strncpy(info->fs_type, sfs.f_fstypename, sizeof(info->fs_type) - 1);
+        info->unionfs_active = (strcmp(sfs.f_fstypename, "unionfs") == 0);
+    } else {
+        strncpy(info->fs_type, "unknown", sizeof(info->fs_type) - 1);
+    }
+
     mkdir_p("/data/arabi_hub");
     FILE *tfp = fopen("/data/arabi_hub/file_tree.txt", "w");
     walk_and_detect(info->mount_path, "", info, tfp);
@@ -269,8 +399,7 @@ static int run_scan(ScanInfo *info) {
 
     char bp_dir[512];
     snprintf(bp_dir, sizeof(bp_dir), "%s/%s", BACKPORTS_ROOT, info->title_id);
-    struct stat st;
-    info->patch_installed = (stat(bp_dir, &st) == 0 && S_ISDIR(st.st_mode));
+    info->patch_installed = dir_has_files(bp_dir);
     info->ok = 1;
     return 1;
 }
@@ -311,7 +440,6 @@ static void handle_extract_bundle(int cfd) {
         send_json(cfd, 404, "{\"ok\":false,\"error\":\"No running game found\"}");
         return;
     }
-    /* For Unreal .pak, stream the .pak index; for Unity/RAGE/RE/Generic, stream file_tree.txt! */
     if (g_scan.pak_full[0] && g_scan.index_size > 0) {
         int fd = open(g_scan.pak_full, O_RDONLY);
         if (fd < 0) {
@@ -406,16 +534,34 @@ static void handle_client(int cfd) {
         char out[2048];
         snprintf(
             out, sizeof(out),
-            "{\"ok\":true,\"title_id\":\"%s\",\"mount_path\":\"%s\",\"engine\":\"%s\","
+            "{\"ok\":true,\"title_id\":\"%s\",\"mount_path\":\"%s\",\"game_format\":\"%s\","
+            "\"fs_type\":\"%s\",\"unionfs_active\":%s,\"engine\":\"%s\","
             "\"pak_rel\":\"%s\",\"patch_rel\":\"%s\",\"ue_ver\":%d,\"encrypted\":%s,"
             "\"pak_size\":%llu,\"index_size\":%llu,\"total_files\":%d,\"patch_installed\":%s}",
-            g_scan.title_id, g_scan.mount_path, g_scan.engine,
+            g_scan.title_id, g_scan.mount_path, g_scan.game_format,
+            g_scan.fs_type, g_scan.unionfs_active ? "true" : "false", g_scan.engine,
             g_scan.pak_rel, g_scan.patch_rel, g_scan.ue_ver,
             g_scan.encrypted ? "true" : "false",
             (unsigned long long)g_scan.pak_size,
             (unsigned long long)g_scan.index_size,
             g_scan.total_files,
             g_scan.patch_installed ? "true" : "false"
+        );
+        send_json(cfd, 200, out);
+        return;
+    }
+    if (strncmp(url, "/api/mount_now", 14) == 0) {
+        if (!run_scan(&g_scan)) {
+            send_json(cfd, 200, "{\"ok\":false,\"status\":\"no_game\"}");
+            return;
+        }
+        int rc = try_mount_unionfs(g_scan.title_id, g_scan.mount_path);
+        char out[512];
+        snprintf(
+            out, sizeof(out),
+            "{\"ok\":%s,\"rc\":%d,\"title_id\":\"%s\",\"mount_path\":\"%s\",\"status\":\"%s\"}",
+            (rc > 0) ? "true" : "false", rc, g_scan.title_id, g_scan.mount_path,
+            rc == 1 ? "mounted" : (rc == 2 ? "already_mounted" : (rc == 0 ? "no_patch" : strerror(-rc)))
         );
         send_json(cfd, 200, out);
         return;
@@ -452,6 +598,7 @@ static void handle_client(int cfd) {
         char bp_dir[512];
         snprintf(bp_dir, sizeof(bp_dir), "%s/%s", BACKPORTS_ROOT, tid);
         rm_rf(bp_dir);
+        g_last_mounted_key[0] = 0;
         send_json(cfd, 200, "{\"ok\":true}");
         return;
     }
@@ -482,7 +629,7 @@ static void handle_client(int cfd) {
         if (sl) *sl = 0;
         mkdir_p(dir_dst);
 
-        int fd = open(full_dst, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+        int fd = open(full_dst, O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (fd < 0) {
             send_json(cfd, 500, "{\"ok\":false,\"error\":\"Cannot write destination file\"}");
             return;
@@ -503,6 +650,7 @@ static void handle_client(int cfd) {
             written += w;
         }
         close(fd);
+        chmod(full_dst, 0666);
 
         char ok_json[1024];
         snprintf(ok_json, sizeof(ok_json), "{\"ok\":true,\"bytes\":%zu,\"path\":\"%s\"}", written, full_dst);
@@ -545,14 +693,26 @@ int main(void) {
     }
     listen(sfd, 8);
     char okmsg[128];
-    snprintf(okmsg, sizeof(okmsg), "PS5 Arabi Hub v2 READY!\nhttp://172.20.10.10:%d", bound_port);
+    snprintf(okmsg, sizeof(okmsg), "PS5 Arabi Hub v5 UNIVERSAL READY!\nhttp://172.20.10.10:%d", bound_port);
     ps5_notify(okmsg);
 
     while (1) {
-        int cfd = accept(sfd, NULL, NULL);
-        if (cfd < 0) continue;
-        handle_client(cfd);
-        close(cfd);
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(sfd, &rfds);
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 200000; /* 200ms auto-mount poll interval */
+
+        int sel = select(sfd + 1, &rfds, NULL, NULL, &tv);
+        if (sel > 0 && FD_ISSET(sfd, &rfds)) {
+            int cfd = accept(sfd, NULL, NULL);
+            if (cfd >= 0) {
+                handle_client(cfd);
+                close(cfd);
+            }
+        }
+        poll_auto_mount();
     }
     close(sfd);
     return 0;

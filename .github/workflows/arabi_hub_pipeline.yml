@@ -30,12 +30,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Beast Cloud Engine Libraries (UnityPy + Arabic + Requests)
+      - name: Install Universal Cloud Engine Tools (UnityPy + Arabic + repak)
         run: |
           python3 -m pip install --upgrade pip
           pip install requests arabic-reshaper python-bidi UnityPy
+          # Download prebuilt repak CLI for Unreal Engine 4/5 .pak building
+          REPAK_URL=$(curl -s https://api.github.com/repos/trumank/repak/releases/latest \
+            | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); print(next((a['browser_download_url'] for a in assets if 'x86_64-unknown-linux' in a['name'] and a['name'].endswith('.tar.xz')), ''))")
+          if [ -n "$REPAK_URL" ]; then
+            curl -sL "$REPAK_URL" -o /tmp/repak.tar.xz
+            tar -xJf /tmp/repak.tar.xz -C /tmp
+            find /tmp -name repak -type f -exec sudo install -m 755 {} /usr/local/bin/repak \;
+            repak --version || true
+          fi
 
-      - name: Run PS5 Arabi Hub v3 Beast Engine
+      - name: Run PS5 Arabi Hub v5 Ultimate Universal Engine
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}

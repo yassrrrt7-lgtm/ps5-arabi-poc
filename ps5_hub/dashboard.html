@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>PS5 Arabi Hub — Final Beast Edition</title>
+<title>PS5 Arabi Hub v5 — النسخة الشاملة النهائية</title>
 <style>
   :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--txt:#e6edf3;--muted:#8b949e;--green:#238636;--blue:#1f6feb;--red:#da3633;--amber:#9e6a03;--purple:#8957e5;}
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
@@ -18,7 +18,7 @@
   .btn-scan{background:#30363d;} .btn-green{background:var(--green);} .btn-blue{background:var(--blue);} .btn-amber{background:var(--amber);} .btn-purple{background:var(--purple);} .btn-red{background:var(--red);}
   .prog-wrap{background:#21262d;border-radius:99px;height:10px;overflow:hidden;margin:9px 0 6px;}
   .prog-bar{height:100%;width:0%;background:linear-gradient(90deg,#1f6feb,#3fb950);transition:width .25s;}
-  .log{background:#010409;border:1px solid var(--border);border-radius:10px;padding:10px;height:185px;overflow-y:auto;font-size:12px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;}
+  .log{background:#010409;border:1px solid var(--border);border-radius:10px;padding:10px;height:195px;overflow-y:auto;font-size:12px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;}
   .l-ok{color:#3fb950;} .l-err{color:#f85149;} .l-info{color:#58a6ff;} .l-warn{color:#e3b341;}
   details summary{cursor:pointer;font-weight:700;font-size:13.5px;color:#c9d1d9;}
   input[type=text],input[type=password],select,textarea{width:100%;padding:9px;margin:5px 0 9px;border-radius:8px;border:1px solid var(--border);background:#0d1117;color:var(--txt);font-size:12.5px;direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
@@ -28,13 +28,14 @@
 </style>
 </head>
 <body>
-  <h1><span>🎮 PS5 Arabi Hub</span><span class="badge">النسخة النهائية</span></h1>
-  <div class="sub">التعريب الأوتوماتيكي الشامل — كل خطوة تظهر قدامك حرفياً</div>
+  <h1><span>🎮 PS5 Arabi Hub</span><span class="badge">v5 الشاملة</span></h1>
+  <div class="sub">PS4 + PS5 بكل الصيغ (FPKG + ShadowMountPlus) — خطوط تلقائية وحماية ضد الكراش</div>
 
   <div class="card">
     <div class="row"><span>اللعبة الشغّالة (Title ID)</span><strong id="vTitle">لم يتم الفحص بعد</strong></div>
+    <div class="row"><span>صيغة اللعبة</span><strong id="vFormat">—</strong></div>
     <div class="row"><span>المحرك المكتشف</span><strong id="vEngine">—</strong></div>
-    <div class="row"><span>حالة التشفير</span><strong id="vEnc">—</strong></div>
+    <div class="row"><span>طبقة التعريب (unionfs)</span><strong id="vMount">—</strong></div>
     <div class="row"><span>تعريب مثبّت حالياً</span><strong id="vPatch">—</strong></div>
   </div>
 
@@ -42,7 +43,7 @@
   <button class="btn-green" onclick="doExtractAndSend()">📤 1. استخراج وإرسال النصوص للتلجرام</button>
   <button class="btn-amber" onclick="document.getElementById('arFiles').click()">☁️ 2. رفع ملفات الترجمة من جميني وبناء الباتش</button>
   <input id="arFiles" type="file" multiple accept=".json,.py" style="display:none" onchange="doUploadTranslated(this.files)">
-  <button class="btn-blue" onclick="doInstallLatest()">📥 3. تثبيت آخر تعريب جاهز على السوني</button>
+  <button class="btn-blue" onclick="doInstallLatest()">📥 3. تثبيت وتفعيل آخر تعريب جاهز على السوني</button>
   <button class="btn-red" onclick="doUninstall()">🗑️ إزالة التعريب واسترجاع اللعبة أصلية</button>
 
   <div class="card">
@@ -60,9 +61,9 @@
 
   <div class="card">
     <details>
-      <summary>🔧 سحب ملف محدد / إعدادات العرض اليدوية / AES</summary>
+      <summary>🔧 سحب ملف محدد (نصوص/خطوط) / إعدادات العرض / AES</summary>
       <div style="margin-top:10px;">
-        <label>اختر ملف النصوص مباشرة من القائمة (تتعبّى تلقائياً بعد الفحص):</label>
+        <label>اختر ملف النصوص مباشرة (يسحب معه catalog.json والخطوط تلقائياً لـ Unity):</label>
         <select id="filePicker" onchange="if(this.value) document.getElementById('customRel').value=this.value;">
           <option value="">-- اضغط "فحص اللعبة" لتعبئة الملفات تلقائياً --</option>
         </select>
@@ -110,6 +111,7 @@
 
 <script>
 let LAST_SCAN = null;
+let FILE_TREE_LINES = [];
 
 function log(msg, cls='l-info'){
   const box = document.getElementById('logBox');
@@ -170,6 +172,12 @@ function bufToBase64(buf){
   return btoa(bin);
 }
 function strToB64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function b64ToBytes(b64){
+  const bin = atob(b64.replace(/\s/g, ''));
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
 
 function getRenderConfig(){
   return {
@@ -190,26 +198,27 @@ async function doScan(){
     if(!d.ok) throw new Error(d.error || 'افتح اللعبة أولاً ثم أعد الفحص.');
     LAST_SCAN = d;
     document.getElementById('vTitle').textContent = d.title_id;
+    document.getElementById('vFormat').textContent = d.game_format || 'PS5/PS4';
     document.getElementById('vEngine').textContent = d.engine + (d.ue_ver ? ` (v${d.ue_ver})` : '');
-    document.getElementById('vEnc').textContent = d.encrypted ? 'مشفّر 🔒' : 'غير مشفّر ✅';
+    document.getElementById('vMount').textContent = d.unionfs_active ? 'مفعّلة (unionfs ✅)' : (d.fs_type || 'جاهزة');
     document.getElementById('vPatch').textContent = d.patch_installed ? 'مثبّت ✅' : 'لا يوجد';
     setProg(100, 'تم الفحص');
-    log(`✅ تم اكتشاف ${d.title_id} | المحرك: ${d.engine} | الملفات: ${d.total_files || '?'}`, 'l-ok');
+    log(`✅ ${d.title_id} | ${d.game_format || ''} | ${d.engine} | الملفات: ${d.total_files || '?'}`, 'l-ok');
     try {
       const tr = await fetch('/api/file_tree');
       if(tr.ok){
         const txt = await tr.text();
-        const lines = txt.split(/\r?\n/).map(l => l.split('\t')[1]).filter(Boolean);
-        const kws = ['english','localization','locres','lang','string','text','subtit','dialog','.bundle','.json','.xml','.csv','.msg','.fmg'];
-        const hits = lines.filter(f => kws.some(k => f.toLowerCase().includes(k)));
+        FILE_TREE_LINES = txt.split(/\r?\n/).map(l => l.split('\t')[1]).filter(Boolean);
+        const kws = ['english','localization','locres','lang','string','text','subtit','dialog','.bundle','.json','.xml','.csv','.msg','.fmg','font'];
+        const hits = FILE_TREE_LINES.filter(f => kws.some(k => f.toLowerCase().includes(k)));
         const sel = document.getElementById('filePicker');
         sel.innerHTML = '<option value="">-- اختر ملف النصوص (' + hits.length + ' ملف مرشّح) --</option>';
-        for(const f of hits.slice(0, 80)){
+        for(const f of hits.slice(0, 100)){
           const opt = document.createElement('option');
           opt.value = f; opt.textContent = f;
           sel.appendChild(opt);
         }
-        const eng = hits.find(f => f.toLowerCase().includes('english') && f.toLowerCase().includes('string'));
+        const eng = hits.find(f => f.toLowerCase().includes('english') && (f.toLowerCase().includes('string') || f.toLowerCase().endsWith('.locres')));
         if(eng){ sel.value = eng; document.getElementById('customRel').value = eng; }
       }
     } catch(_){}
@@ -243,20 +252,41 @@ async function doPullSpecificFile(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
+    const tid = LAST_SCAN.title_id;
     const rel = document.getElementById('customRel').value.replace(/[^\x20-\x7E]/g, '').trim();
     if(!rel) throw new Error('اختر ملفاً من القائمة أو الصق المسار أولاً.');
-    setProg(25, 'سحب الملف من PS5...');
+    setProg(20, 'سحب الملف من PS5...');
     const r = await fetch(`/api/read_file?rel=${encodeURI(rel)}`);
     if(!r.ok) throw new Error(`لم يُعثر على الملف (${r.status}): ${rel}`);
     const buf = await r.arrayBuffer();
     const fname = rel.split('/').pop();
-    log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب). جاري فك نصوصه للتلجرام...`, 'l-ok');
-    setProg(65, 'رفع الملف للسحابة...');
-    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/target_file.json`, strToB64(JSON.stringify({rel, fname})), `target ${fname}`);
-    await ghPutFile(`hub_games/${LAST_SCAN.title_id}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+    log(`✅ تم سحب ${fname} (${(buf.byteLength/1024).toFixed(1)} ك.ب).`, 'l-ok');
+    setProg(45, 'رفع الملف للسحابة...');
+    await ghPutFile(`hub_games/${tid}/target_file.json`, strToB64(JSON.stringify({rel, fname})), `target ${fname}`);
+    await ghPutFile(`hub_games/${tid}/raw/${fname}`, bufToBase64(buf), `raw ${fname}`);
+
+    // Auto-pull Unity Addressables catalog.json if present so CRC mismatch NEVER happens!
+    if(fname.toLowerCase().endsWith('.bundle')){
+      const catRel = FILE_TREE_LINES.find(f => f.toLowerCase().endsWith('catalog.json'));
+      if(catRel){
+        try{
+          log(`⏳ سحب catalog.json تلقائياً لتعطيل فحص CRC...`);
+          const cr = await fetch(`/api/read_file?rel=${encodeURI(catRel)}`);
+          if(cr.ok){
+            const cbuf = await cr.arrayBuffer();
+            const cfname = catRel.split('/').pop();
+            await ghPutFile(`hub_games/${tid}/catalog_file.json`, strToB64(JSON.stringify({rel: catRel, fname: cfname})), `catalog meta`);
+            await ghPutFile(`hub_games/${tid}/raw/${cfname}`, bufToBase64(cbuf), `raw catalog.json`);
+            log(`✅ تم سحب catalog.json تلقائياً.`, 'l-ok');
+          }
+        }catch(_){}
+      }
+    }
+
+    setProg(80, 'تشغيل السحابة...');
     await ghFetch('/actions/workflows/arabi_hub_pipeline.yml/dispatches', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ref:'main', inputs:{action:'extract_texts', title_id:LAST_SCAN.title_id}})
+      body: JSON.stringify({ref:'main', inputs:{action:'extract_texts', title_id:tid}})
     });
     setProg(100, 'جاري فك النصوص للتلجرام!');
     log('✅ تم! خلال 30 ثانية توصلك ملفات JSON جاهزة لجميني في التلجرام.', 'l-ok');
@@ -297,7 +327,7 @@ async function doApplyAiFix(){
     if(!raw) throw new Error('الصق كود الإصلاح من جميني في المربع أولاً.');
     setProg(40, 'تطبيق كود الإصلاح...');
     if(raw.startsWith('{')){
-      JSON.parse(raw); // validate JSON
+      JSON.parse(raw);
       await ghPutFile(`hub_games/${tid}/render_config.json`, strToB64(raw), `ai json fix ${tid}`);
       log('✅ تم حفظ إعدادات الإصلاح (JSON) في السحابة.', 'l-ok');
     } else {
@@ -347,37 +377,49 @@ async function doSendBugPhoto(file){
   }catch(e){ setProg(0,'فشل إرسال الصورة'); log('❌ ' + e.message, 'l-err'); }
 }
 
-function b64ToBytes(b64){
-  const bin = atob(b64.replace(/\s/g, ''));
-  const arr = new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
-  return arr;
-}
 async function doInstallLatest(){
   try{
     if(!LAST_SCAN) await doScan();
     if(!LAST_SCAN) return;
     const tid = LAST_SCAN.title_id;
-    setProg(20, 'جلب بيانات آخر باتش جاهز...');
+    setProg(15, 'جلب بيانات آخر باتش جاهز...');
     const metaResp = await ghFetch(`/contents/hub_games/${tid}/out/latest.json`);
     const meta = JSON.parse(new TextDecoder().decode(b64ToBytes(metaResp.content)));
-    log(`⏳ [1/3] تحميل ${meta.fname} (${(meta.size/(1024*1024)).toFixed(2)} م.ب) عبر GitHub API...`);
-    setProg(50, 'جاري التحميل...');
-    const fileInfo = await ghFetch(`/contents/${meta.repo_path}`);
-    let pakBytes;
-    if(fileInfo.content){
-      pakBytes = b64ToBytes(fileInfo.content);
-    } else {
-      const blob = await ghFetch(`/git/blobs/${fileInfo.sha}`);
-      pakBytes = b64ToBytes(blob.content);
+    const fileList = (meta.files && meta.files.length) ? meta.files : [{fname: meta.fname, rel_path: meta.rel_path, repo_path: meta.repo_path, size: meta.size}];
+
+    for(let i = 0; i < fileList.length; i++){
+      const item = fileList[i];
+      const basePct = 20 + (i / fileList.length) * 65;
+      setProg(basePct, `تحميل ملف ${i+1}/${fileList.length}...`);
+      log(`⏳ [${i+1}/${fileList.length}] تحميل ${item.fname} (${(item.size/(1024*1024)).toFixed(2)} م.ب)...`);
+      const fileInfo = await ghFetch(`/contents/${item.repo_path}`);
+      let pakBytes;
+      if(fileInfo.content){
+        pakBytes = b64ToBytes(fileInfo.content);
+      } else {
+        const blob = await ghFetch(`/git/blobs/${fileInfo.sha}`);
+        pakBytes = b64ToBytes(blob.content);
+      }
+      const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURI(item.rel_path)}`, { method:'POST', body: pakBytes });
+      const res = await ins.json();
+      if(!res.ok) throw new Error(res.error || 'فشل التثبيت');
+      log(`✅ تم تثبيت ${item.fname} (${res.bytes} بايت)`, 'l-ok');
     }
-    setProg(80, 'جاري إنشاء المجلدات والتثبيت على PS5...');
-    log(`⏳ [2/3] نسخ الباتش إلى ShadowMountPlus (${meta.rel_path})...`);
-    const ins = await fetch(`/api/install?title_id=${encodeURIComponent(tid)}&rel_path=${encodeURI(meta.rel_path)}`, { method:'POST', body: pakBytes });
-    const res = await ins.json();
-    if(!res.ok) throw new Error(res.error || 'فشل التثبيت');
-    setProg(100, 'تم التثبيت بنجاح!');
-    log(`✅ [3/3] تم التثبيت والتحقق (${res.bytes} بايت) في ${res.path}! أعد تشغيل اللعبة واستمتع.`, 'l-ok');
+
+    setProg(92, 'تفعيل طبقة التعريب (unionfs)...');
+    try {
+      const mr = await fetch(`/api/mount_now?title_id=${encodeURIComponent(tid)}`);
+      const md = await mr.json();
+      if(md.ok){
+        log(`🚀 تم تفعيل طبقة unionfs تلقائياً (${md.status})!`, 'l-ok');
+        document.getElementById('vMount').textContent = 'مفعّلة (unionfs ✅)';
+      } else {
+        log(`ℹ️ حالة التفعيل: ${md.status} — أعد تشغيل اللعبة ليتم تفعيلها فور الفتح.`, 'l-warn');
+      }
+    } catch(_){}
+
+    setProg(100, 'تم التثبيت والتفعيل بنجاح!');
+    log(`🎉 اكتمل التثبيت 100%! أعد تشغيل اللعبة الآن واستمتع بالتعريب.`, 'l-ok');
     document.getElementById('vPatch').textContent = 'مثبّت ✅';
   }catch(e){ setProg(0,'فشل التثبيت'); log('❌ ' + e.message, 'l-err'); }
 }
@@ -397,7 +439,7 @@ async function doUninstall(){
 }
 
 loadCfgUI();
-log('جاهز (النسخة النهائية) — اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
+log('جاهز (النسخة الشاملة v5) — اضغط "فحص اللعبة الشغّالة الآن".', 'l-info');
 </script>
 </body>
 </html>
