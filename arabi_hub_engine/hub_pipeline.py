@@ -607,7 +607,7 @@ def rebuild_unity_universal(raw_file: Path, out_file: Path, merged: dict, cfg: d
                 fonts_injected += 1
             except Exception:
                 pass
-    out_file.write_bytes(env.file.save())
+    out_file.write_bytes(env.file.save(packer="lz4") if raw_file.suffix.lower()==".bundle" else env.file.save())
     assert len(UnityPy.load(str(out_file)).objects) > 0, "Unity bundle integrity verification failed!"
     return patched_cnt, fonts_injected
 
