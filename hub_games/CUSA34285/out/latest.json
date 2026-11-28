@@ -2,5 +2,19 @@
   "fname": "localization-string-tables-english(en)_assets_all.bundle",
   "rel_path": "Media/StreamingAssets/aa/PS4/localization-string-tables-english(en)_assets_all.bundle",
   "repo_path": "hub_games/CUSA34285/out/localization-string-tables-english(en)_assets_all.bundle",
-  "size": 312715
+  "size": 312715,
+  "files": [
+    {
+      "fname": "localization-string-tables-english(en)_assets_all.bundle",
+      "rel_path": "Media/StreamingAssets/aa/PS4/localization-string-tables-english(en)_assets_all.bundle",
+      "repo_path": "hub_games/CUSA34285/out/localization-string-tables-english(en)_assets_all.bundle",
+      "size": 312715
+    },
+    {
+      "fname": "catalog.json",
+      "rel_path": "Media/StreamingAssets/aa/catalog.json",
+      "repo_path": "hub_games/CUSA34285/out/catalog.json",
+      "size": 4474345
+    }
+  ]
 }
