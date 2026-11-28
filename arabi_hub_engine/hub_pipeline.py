@@ -1,9 +1,6 @@
 """
-PS5 Arabi Hub — Universal Cloud Engine (Abdullah's 7 Rules + Auto-QA + Telegram Bot)
-Actions:
-  - analyze_and_send : Analyzes uploaded game scan/index, generates report + Gemini prompt + sends to Telegram.
-  - qa_and_build     : Runs Auto-QA Gate on Gemini-translated JSON files, shapes connected RTL Arabic,
-                       merges fonts, packs UE4/UE5 .pak via repak, and notifies Telegram.
+PS5 Arabi Hub v2.0 — Universal Cloud Engine (Abdullah's 7 Rules + Auto-QA + Telegram Bot)
+Works with ALL engines: Unreal (.pak/IoStore), Unity, RE Engine, Rockstar RAGE, FromSoftware, Generic.
 """
 
 import argparse
@@ -11,9 +8,6 @@ import html
 import json
 import os
 import re
-import shutil
-import struct
-import textwrap
 from pathlib import Path
 
 import requests
@@ -25,14 +19,12 @@ TOKEN_RE = re.compile(
     r"|%(?:\d+\$)?[+-]?(?:\d+)?(?:\.\d+)?[diuoxXfFeEgGaAcspn%]"
     r"|\[[A-Za-z0-9_:\-]+\])"
 )
-ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
-TAG_STRIP_RE = re.compile(r"~[^~\r\n]+~|<[^>]+>")
 
 GEMINI_MASTER_PROMPT = """أنت مترجم ألعاب محترف متخصص في تعريب ألعاب PlayStation إلى العربية الفصحى الطبيعية السلسة.
 المطلوب: ترجم قيم JSON التالية إلى العربية مع الالتزام الصارم بجميع القواعد:
 1. أرجع ملف JSON صالح 100% بنفس المفاتيح بالضبط (لا تغيّر ولا تحذف أي مفتاح).
 2. حافظ على جميع الرموز والمتغيرات والألوان والأزرار كما هي حرفياً دون ترجمة أو تعديل أو حذف أقواس: مثل ~b~ و ~s~ و ~n~ و %s و %d و {0} و <tag> و [BTN].
-3. ترجم بأسلوب حوارات ألعاب طبيعي وممتع يناسب السياق، وتجنب الترجمة الحرفية المضحكة (أسماء الشخصيات والأماكن تُعرّب صوتياً مثل Big Smoke -> بيغ سموك، Carl -> كارل، Sweet -> سويت).
+3. ترجم بأسلوب حوارات ألعاب طبيعي وممتع يناسب السياق، وتجنب الترجمة الحرفية (أسماء الشخصيات والأماكن تُعرّب صوتياً).
 4. لا تترك أي جملة إنجليزية بدون ترجمة إلا الأسماء التقنية أو المفاتيح البرمجية.
 5. لا تستخدم كيانات HTML مثل &quot; — استخدم علامات التنصيص العادية.
 """
@@ -55,7 +47,7 @@ def tg_send_message(text: str):
 def tg_send_document(file_path: Path, caption: str = ""):
     token = os.environ.get("TG_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TG_CHAT_ID", "").strip()
-    if not token or not chat_id:
+    if not token or not chat_id or not file_path.exists():
         return
     with file_path.open("rb") as f:
         r = requests.post(
@@ -67,15 +59,19 @@ def tg_send_document(file_path: Path, caption: str = ""):
     print(f"Telegram sendDocument {file_path.name}:", r.status_code, flush=True)
 
 
-def qa_repair_string(ar: str, orig_en: str) -> str:
-    """Auto-QA Gate: unescape HTML, repair any mangled placeholder tokens, verify clean UTF-8."""
-    ar = html.unescape(ar)
-    src_clean = orig_en.replace("\r\n", "~n~").replace("\n", "~n~")
-    toks = TOKEN_RE.findall(src_clean)
-    for idx, tok in enumerate(toks):
-        ar = re.sub(rf"\[+\s*[xX]\s*{idx}\s*\]+", lambda _: tok, ar)
-    ar = re.sub(r"\[+\s*[xX]\s*\d+\s*\]+", "", ar)
-    return re.sub(r" {2,}", " ", ar).strip()
+def analyze_file_tree(tree_text: str) -> list[str]:
+    """Identify likely localization & font files across Unity, Unreal, RE, RAGE, Godot, Generic."""
+    hits = []
+    keywords = (
+        ".locres", ".ufont", ".ttf", ".otf", "localization", "language", "lang",
+        "subtitles", "dialog", "text", "string", "resources.assets", "globalgamemanagers",
+        ".json", ".xml", ".csv", ".po", ".msg", ".fmg", ".gxt2", ".rpf",
+    )
+    for line in tree_text.splitlines():
+        low = line.lower()
+        if any(k in low for k in keywords):
+            hits.append(line)
+    return hits[:40]
 
 
 def cmd_analyze(title_id: str):
@@ -84,23 +80,36 @@ def cmd_analyze(title_id: str):
     prompt_file = gdir / "PROMPT_GEMINI_AR.txt"
     prompt_file.write_text(GEMINI_MASTER_PROMPT, encoding="utf-8")
 
+    extracted = gdir / "extracted.arabi"
+    tree_path = gdir / "file_tree.txt"
+    candidates_summary = ""
+
+    if extracted.exists():
+        raw = extracted.read_bytes()
+        # If non-Unreal (file_tree text), save as file_tree.txt and analyze candidates!
+        if scan.get("engine") != "Unreal Engine":
+            tree_text = raw.decode("utf-8", errors="replace")
+            tree_path.write_text(tree_text, encoding="utf-8")
+            hits = analyze_file_tree(tree_text)
+            if hits:
+                candidates_summary = "\n\n📂 أبرز ملفات النصوص/الخطوط المرشّحة:\n" + "\n".join(hits[:12])
+
     msg = (
-        f"🎮 تم استلام وفحص اللعبة بنجاح!\n"
+        f"🎮 تم استلام وفحص اللعبة بنجاح عبر PS5 Arabi Hub v2!\n"
         f"• الرمز: {title_id}\n"
-        f"• المحرك: {scan.get('engine')} (v{scan.get('ue_ver', '?')})\n"
-        f"• التشفير: {'مشفّر 🔒' if scan.get('encrypted') else 'غير مشفّر ✅'}\n"
-        f"• الأرشيف: {scan.get('pak_rel', 'غير محدد')}\n\n"
-        f"أرفقت لك البرومبت الاحترافي المعتمد لجميني.\n"
-        f"بعد ما تترجم ملفات JSON في جميني، ارفعها من زر (2. رفع ملفات الترجمة) في صفحة PS5 Arabi على Safari."
+        f"• المحرك: {scan.get('engine')}" + (f" (v{scan.get('ue_ver')})" if scan.get("ue_ver") else "") + "\n"
+        f"• إجمالي الملفات: {scan.get('total_files', '?')}\n"
+        f"• التشفير: {'مشفّر 🔒' if scan.get('encrypted') else 'غير مشفّر ✅'}"
+        f"{candidates_summary}\n\n"
+        f"✅ أرفقت لك شجرة ملفات اللعبة + البرومبت الاحترافي لجميني."
     )
     tg_send_message(msg)
-    tg_send_document(prompt_file, "الأمر الاحترافي لجميني (انسخه مع كل ملف نصوص)")
+    if tree_path.exists():
+        tg_send_document(tree_path, f"شجرة ملفات {title_id} (أرسلها لجميني لتحديد ملفات النصوص بدقة 100%)")
+    tg_send_document(prompt_file, "الأمر الاحترافي لجميني")
 
 
 def cmd_qa_and_build(title_id: str):
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
     gdir = Path("hub_games") / title_id
     tr_dir = gdir / "translated"
     merged = {}

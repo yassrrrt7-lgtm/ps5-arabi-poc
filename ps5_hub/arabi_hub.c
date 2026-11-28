@@ -1,8 +1,13 @@
 /*
- * PS5 Arabi Hub v1.1 (FW 5.50 / etaHEN + ShadowMountPlus)
- * - Uses port 8899 (avoids port 8080 conflict with etaHEN/websrv)
- * - Pops up an official PS5 TV notification when started!
- * - Scans BOTH PS5 (/mnt/sandbox/PPSA*) and PS4 FPKG (/mnt/sandbox/pfsmnt/CUSA*)
+ * PS5 Arabi Hub v2.0 (FW 5.50 / etaHEN + ShadowMountPlus)
+ * Universal Engine Bridge:
+ *   - Scans BOTH PS5 (/mnt/sandbox/PPSA*) and PS4 FPKG (/mnt/sandbox/pfsmnt/CUSA*)
+ *   - /api/scan           : Detects Title ID, Engine (Unreal / Unity / RE / RAGE / Generic), Encryption
+ *   - /api/file_tree      : Streams full relative file_tree.txt (works on 100% of ALL engines!)
+ *   - /api/read_file      : Streams any relative file from the running game (for Unity/JSON/etc.)
+ *   - /api/extract_bundle : Streams UE .pak index OR universal file_tree.txt for non-UE engines
+ *   - /api/install        : Writes final patch directly to /data/homebrew/backports/<TITLE_ID>/...
+ *   - /api/uninstall      : Cleanly removes patch & restores original game
  */
 
 #include <arpa/inet.h>
@@ -20,7 +25,6 @@
 
 #include "dashboard_html.h"
 
-#define HUB_PORT 8899
 #define BACKPORTS_ROOT "/data/homebrew/backports"
 #define UE_PAK_MAGIC 0x5A6F12E1U
 
@@ -53,6 +57,7 @@ typedef struct {
     uint64_t index_offset;
     uint64_t index_size;
     int patch_installed;
+    int total_files;
 } ScanInfo;
 
 static ScanInfo g_scan;
@@ -157,7 +162,7 @@ static int probe_ue_pak(const char *pak_path, ScanInfo *info) {
     return 0;
 }
 
-static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) {
+static void walk_and_detect(const char *base, const char *rel, ScanInfo *info, FILE *tree_fp) {
     char dirpath[768];
     if (rel[0]) snprintf(dirpath, sizeof(dirpath), "%s/%s", base, rel);
     else snprintf(dirpath, sizeof(dirpath), "%s", base);
@@ -176,8 +181,12 @@ static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) 
         struct stat st;
         if (stat(full, &st) != 0) continue;
         if (S_ISDIR(st.st_mode)) {
-            find_largest_pak(base, sub_rel, info);
+            walk_and_detect(base, sub_rel, info, tree_fp);
         } else {
+            info->total_files++;
+            if (tree_fp) {
+                fprintf(tree_fp, "%llu\t%s\n", (unsigned long long)st.st_size, sub_rel);
+            }
             size_t nlen = strlen(e->d_name);
             if (nlen > 4 && strcasecmp(e->d_name + nlen - 4, ".pak") == 0) {
                 if ((uint64_t)st.st_size > info->pak_size) {
@@ -192,8 +201,12 @@ static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) 
                         } else {
                             snprintf(info->patch_rel, sizeof(info->patch_rel), "pakchunk0-ps5_999_p.pak");
                         }
+                    } else if (!info->engine[0] && strstr(sub_rel, "re_chunk")) {
+                        strncpy(info->engine, "RE Engine", sizeof(info->engine) - 1);
                     }
                 }
+            } else if (nlen > 4 && strcasecmp(e->d_name + nlen - 4, ".rpf") == 0) {
+                if (!info->engine[0]) strncpy(info->engine, "Rockstar RAGE", sizeof(info->engine) - 1);
             } else if (strcmp(e->d_name, "globalgamemanagers") == 0 || strcmp(e->d_name, "resources.assets") == 0) {
                 if (!info->engine[0]) strncpy(info->engine, "Unity", sizeof(info->engine) - 1);
             }
@@ -205,7 +218,6 @@ static void find_largest_pak(const char *base, const char *rel, ScanInfo *info) 
 static int run_scan(ScanInfo *info) {
     memset(info, 0, sizeof(*info));
 
-    /* 1. Check PS5 games in /mnt/sandbox/PPSA*_000/app0 */
     DIR *d = opendir("/mnt/sandbox");
     if (d) {
         struct dirent *e;
@@ -225,7 +237,6 @@ static int run_scan(ScanInfo *info) {
         closedir(d);
     }
 
-    /* 2. Check PS4 FPKG games in /mnt/sandbox/pfsmnt/CUSA*-app0* */
     if (!info->title_id[0]) {
         d = opendir("/mnt/sandbox/pfsmnt");
         if (d) {
@@ -248,7 +259,12 @@ static int run_scan(ScanInfo *info) {
     }
 
     if (!info->title_id[0]) return 0;
-    find_largest_pak(info->mount_path, "", info);
+
+    mkdir_p("/data/arabi_hub");
+    FILE *tfp = fopen("/data/arabi_hub/file_tree.txt", "w");
+    walk_and_detect(info->mount_path, "", info, tfp);
+    if (tfp) fclose(tfp);
+
     if (!info->engine[0]) strncpy(info->engine, "Generic/Custom", sizeof(info->engine) - 1);
 
     char bp_dir[512];
@@ -259,45 +275,76 @@ static int run_scan(ScanInfo *info) {
     return 1;
 }
 
+static void stream_file(int cfd, const char *path, const char *ctype) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        send_json(cfd, 404, "{\"ok\":false,\"error\":\"File not found\"}");
+        return;
+    }
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        close(fd);
+        send_json(cfd, 500, "{\"ok\":false,\"error\":\"stat failed\"}");
+        return;
+    }
+    char hdr[256];
+    int hlen = snprintf(
+        hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: %s\r\n"
+        "Content-Length: %llu\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n\r\n",
+        ctype, (unsigned long long)st.st_size
+    );
+    send_all(cfd, hdr, (size_t)hlen);
+    uint8_t chunk[32768];
+    ssize_t n;
+    while ((n = read(fd, chunk, sizeof(chunk))) > 0) {
+        send_all(cfd, chunk, (size_t)n);
+    }
+    close(fd);
+}
+
 static void handle_extract_bundle(int cfd) {
     if (!g_scan.ok && !run_scan(&g_scan)) {
         send_json(cfd, 404, "{\"ok\":false,\"error\":\"No running game found\"}");
         return;
     }
-    if (!g_scan.pak_full[0] || g_scan.index_size == 0) {
-        send_json(cfd, 400, "{\"ok\":false,\"error\":\"Only Unreal .pak extraction is active in v1.1\"}");
-        return;
+    /* For Unreal .pak, stream the .pak index; for Unity/RAGE/RE/Generic, stream file_tree.txt! */
+    if (g_scan.pak_full[0] && g_scan.index_size > 0) {
+        int fd = open(g_scan.pak_full, O_RDONLY);
+        if (fd < 0) {
+            send_json(cfd, 500, "{\"ok\":false,\"error\":\"Cannot open pak\"}");
+            return;
+        }
+        uint64_t sz = g_scan.index_size;
+        char hdr[256];
+        int hlen = snprintf(
+            hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Content-Length: %llu\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Connection: close\r\n\r\n",
+            (unsigned long long)sz
+        );
+        send_all(cfd, hdr, (size_t)hlen);
+        uint8_t chunk[32768];
+        uint64_t left = sz;
+        off_t cur = (off_t)g_scan.index_offset;
+        while (left > 0) {
+            size_t to_read = left > sizeof(chunk) ? sizeof(chunk) : (size_t)left;
+            ssize_t n = pread(fd, chunk, to_read, cur);
+            if (n <= 0) break;
+            send_all(cfd, chunk, (size_t)n);
+            cur += n;
+            left -= (uint64_t)n;
+        }
+        close(fd);
+    } else {
+        stream_file(cfd, "/data/arabi_hub/file_tree.txt", "text/plain; charset=utf-8");
     }
-    int fd = open(g_scan.pak_full, O_RDONLY);
-    if (fd < 0) {
-        send_json(cfd, 500, "{\"ok\":false,\"error\":\"Cannot open pak\"}");
-        return;
-    }
-    uint64_t sz = g_scan.index_size;
-    char hdr[256];
-    int hlen = snprintf(
-        hdr, sizeof(hdr),
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: application/octet-stream\r\n"
-        "Content-Length: %llu\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Connection: close\r\n\r\n",
-        (unsigned long long)sz
-    );
-    send_all(cfd, hdr, (size_t)hlen);
-
-    uint8_t chunk[32768];
-    uint64_t left = sz;
-    off_t cur = (off_t)g_scan.index_offset;
-    while (left > 0) {
-        size_t to_read = left > sizeof(chunk) ? sizeof(chunk) : (size_t)left;
-        ssize_t n = pread(fd, chunk, to_read, cur);
-        if (n <= 0) break;
-        send_all(cfd, chunk, (size_t)n);
-        cur += n;
-        left -= (uint64_t)n;
-    }
-    close(fd);
 }
 
 static void url_decode(const char *src, char *dst, size_t max_len) {
@@ -361,15 +408,34 @@ static void handle_client(int cfd) {
             out, sizeof(out),
             "{\"ok\":true,\"title_id\":\"%s\",\"mount_path\":\"%s\",\"engine\":\"%s\","
             "\"pak_rel\":\"%s\",\"patch_rel\":\"%s\",\"ue_ver\":%d,\"encrypted\":%s,"
-            "\"pak_size\":%llu,\"index_size\":%llu,\"patch_installed\":%s}",
+            "\"pak_size\":%llu,\"index_size\":%llu,\"total_files\":%d,\"patch_installed\":%s}",
             g_scan.title_id, g_scan.mount_path, g_scan.engine,
             g_scan.pak_rel, g_scan.patch_rel, g_scan.ue_ver,
             g_scan.encrypted ? "true" : "false",
             (unsigned long long)g_scan.pak_size,
             (unsigned long long)g_scan.index_size,
+            g_scan.total_files,
             g_scan.patch_installed ? "true" : "false"
         );
         send_json(cfd, 200, out);
+        return;
+    }
+    if (strncmp(url, "/api/file_tree", 14) == 0) {
+        if (!g_scan.ok) run_scan(&g_scan);
+        stream_file(cfd, "/data/arabi_hub/file_tree.txt", "text/plain; charset=utf-8");
+        return;
+    }
+    if (strncmp(url, "/api/read_file", 14) == 0) {
+        if (!g_scan.ok) run_scan(&g_scan);
+        char rel[512];
+        get_query_param(url, "rel", rel, sizeof(rel));
+        if (!rel[0] || strstr(rel, "..")) {
+            send_json(cfd, 400, "{\"ok\":false,\"error\":\"Invalid path\"}");
+            return;
+        }
+        char full[768];
+        snprintf(full, sizeof(full), "%s/%s", g_scan.mount_path, rel);
+        stream_file(cfd, full, "application/octet-stream");
         return;
     }
     if (strncmp(url, "/api/extract_bundle", 19) == 0) {
@@ -455,14 +521,13 @@ int main(void) {
     }
     int opt = 1;
     setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(HUB_PORT);
 
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     int bound_port = 0;
     for (int port = 8899; port <= 8905; port++) {
         addr.sin_port = htons((uint16_t)port);
@@ -480,7 +545,7 @@ int main(void) {
     }
     listen(sfd, 8);
     char okmsg[128];
-    snprintf(okmsg, sizeof(okmsg), "PS5 Arabi Hub READY!\nhttp://172.20.10.10:%d", bound_port);
+    snprintf(okmsg, sizeof(okmsg), "PS5 Arabi Hub v2 READY!\nhttp://172.20.10.10:%d", bound_port);
     ps5_notify(okmsg);
 
     while (1) {
