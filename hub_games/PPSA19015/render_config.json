@@ -1,0 +1,8 @@
+{
+  "reshape": true,
+  "bidi": true,
+  "use_lro": true,
+  "wrap_width": 32,
+  "aes_key": "",
+  "skip_keys": []
+}
