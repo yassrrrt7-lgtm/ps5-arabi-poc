@@ -462,13 +462,26 @@ int main(void) {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(HUB_PORT);
 
-    if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        ps5_notify("PS5 Arabi Hub: bind() failed on port 8899!");
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    int bound_port = 0;
+    for (int port = 8899; port <= 8905; port++) {
+        addr.sin_port = htons((uint16_t)port);
+        if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            bound_port = port;
+            break;
+        }
+    }
+    if (!bound_port) {
+        char emsg[128];
+        snprintf(emsg, sizeof(emsg), "PS5 Arabi Hub: bind failed errno=%d (%s)", errno, strerror(errno));
+        ps5_notify(emsg);
         close(sfd);
         return 1;
     }
     listen(sfd, 8);
-    ps5_notify("PS5 Arabi Hub READY!\nOpen http://172.20.10.10:8899");
+    char okmsg[128];
+    snprintf(okmsg, sizeof(okmsg), "PS5 Arabi Hub READY!\nhttp://172.20.10.10:%d", bound_port);
+    ps5_notify(okmsg);
 
     while (1) {
         int cfd = accept(sfd, NULL, NULL);
